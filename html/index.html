@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+    <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'" />
+    <link rel="stylesheet" href="../assets/css/fonts.css" />
+    <link rel="stylesheet" href="../assets/css/output.css" />
+    <title>PillsNative</title>
+</head>
+<body class="bg-[#191D22] flex flex-col p-5 gap-5">
+<button id="toggleForm" class="min-h-[48px] w-full bg-[#2165CC] text-white rounded-[4px] font-bold text-[14px] cursor-pointer hover:opacity-80 duration-200 active:scale-95">Добавить новый приём</button>
+
+<!-- Форма добавления лекарства (по умолчанию скрыта) -->
+<div id="addPillsForm" class="flex flex-col gap-2 scheme-light-dark hidden">
+    <input id="drugName" type="text" class="bg-[#0F1318] min-h-[42px] outline-none text-white rounded-[4px] text-[14px] px-3 cursor-pointer" placeholder="Название препарата" />
+    <input id="dosage" type="text" class="bg-[#0F1318] min-h-[42px] outline-none text-white rounded-[4px] text-[14px] px-3 cursor-pointer" placeholder="Дозировка" />
+    <input id="date" type="date" class="bg-[#0F1318] min-h-[42px] outline-none text-white rounded-[4px] text-[14px] px-3 cursor-pointer" />
+    <input id="time" type="time" class="bg-[#0F1318] min-h-[42px] outline-none text-white rounded-[4px] text-[14px] px-3 cursor-pointer" />
+    <div class="flex items-center gap-2">
+        <label for="notifyDaily" class="flex items-center gap-2">
+            <input id="notifyDaily" type="checkbox" class="bg-[#0F1318] min-h-[20px] min-w-[20px] outline-none cursor-pointer" />
+            <p class="text-white">Присылать уведомления каждый день</p>
+        </label>
+    </div>
+    <textarea id="description" class="bg-[#0F1318] min-h-[150px] outline-none text-white rounded-[4px] text-[14px] p-3 resize-none cursor-pointer" placeholder="Добавьте описание"></textarea>
+
+    <button type="submit" id="save" class="min-h-[48px] w-full bg-[#2165CC] text-white rounded-[4px] font-bold text-[14px] cursor-pointer hover:opacity-80 duration-200 active:scale-95">Сохранить</button>
+    <button id="delete" class="min-h-[48px] w-full bg-red-500 text-white rounded-[4px] font-bold text-[14px] cursor-pointer hover:opacity-80 duration-200 active:scale-95 hidden">Удалить</button>
+    <p id="error" class="text-[red] text-center"></p>
+    <p id="success" class="text-[green] text-center"></p>
+</div>
+
+<!-- Список таблеток -->
+<div class="flex flex-col pill-list gap-2">
+
+</div>
+
+<script src="../renderer.js"></script>
+</body>
+</html>
