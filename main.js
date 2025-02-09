@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const schedule = require('node-schedule');
 
+app.setAppUserModelId("PillsApp - Выпить таблетки!");
+
 let mainWindow = null;
 let tray = null;
 
@@ -11,6 +13,8 @@ const createWindow = () => {
     mainWindow = new BrowserWindow({
         minWidth: 400,
         minHeight: 650,
+        maxWidth: 500,
+        maxHeight: 700,
         width: 400,
         height: 650,
         autoHideMenuBar: true,
@@ -71,56 +75,40 @@ const createTray = () => {
         }
     });
 };
-
+const sendNotification = (title, body) => {
+    const notification = new Notification({ title, body, silent: false,  icon: path.join(__dirname, 'assets/img/icon.png'), });
+    notification.show();
+    notification.on('click', () => mainWindow.show());
+};
 // Настройка уведомлений
 function scheduleNotification(pill) {
-    if (!pill.notifyDaily && !pill.date) return; // Пропускаем, если нет даты и не установлено ежедневное уведомление
+    if (!pill.notifyDaily && !pill.date) return;
 
     const notificationTime = new Date();
     if (pill.notifyDaily) {
         notificationTime.setHours(pill.time.split(':')[0], pill.time.split(':')[1], 0);
     } else {
         notificationTime.setFullYear(
-            pill.date.split('-')[0],
-            pill.date.split('-')[1] - 1,
-            pill.date.split('-')[2]
+            pill.date.split('-')[0], pill.date.split('-')[1] - 1, pill.date.split('-')[2]
         );
         notificationTime.setHours(pill.time.split(':')[0], pill.time.split(':')[1], 0);
     }
 
     if (notificationTime <= new Date()) {
-        notificationTime.setDate(notificationTime.getDate() + 1); // Если время уже прошло, планируем на следующий день
+        notificationTime.setDate(notificationTime.getDate() + 1);
     }
 
-    const job = schedule.scheduleJob(notificationTime, () => {
-        const notification = new Notification({
-            title: `Время выпить ${pill.drugName}`,
-            body: `Принять ${pill.dosage}`,
-            silent: false,
-        });
-
-        // При клике на уведомление показываем главное окно
-        notification.on('click', () => {
-            mainWindow.show();
-        });
+    schedule.scheduleJob(notificationTime, () => {
+        sendNotification(`Время выпить ${pill.drugName}`, `Принять ${pill.dosage}`);
     });
 
-    // Для ежедневных уведомлений создаём повторяющуюся задачу
     if (pill.notifyDaily) {
         const rule = new schedule.RecurrenceRule();
-        rule.hour = pill.time.split(':')[0];
-        rule.minute = pill.time.split(':')[1];
-        schedule.scheduleJob(rule, () => {
-            const notification = new Notification({
-                title: `Время выпить ${pill.drugName}`,
-                body: `Принять ${pill.dosage}`,
-                silent: false,
-            });
+        rule.hour = parseInt(pill.time.split(':')[0]);
+        rule.minute = parseInt(pill.time.split(':')[1]);
 
-            // При клике на уведомление показываем главное окно
-            notification.on('click', () => {
-                mainWindow.show();
-            });
+        schedule.scheduleJob(rule, () => {
+            sendNotification(`Время выпить ${pill.drugName}`, `Принять ${pill.dosage}`);
         });
     }
 }
