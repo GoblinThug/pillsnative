@@ -98,11 +98,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            forge_args: --targets=@electron-forge/maker-squirrel,@electron-forge/maker-zip
+            platform: windows
           - os: macos-latest
-            forge_args: --targets=@electron-forge/maker-zip,@electron-forge/maker-dmg --arch=x64,arm64
+            platform: macos
           - os: ubuntu-latest
-            forge_args: --targets=@electron-forge/maker-zip,@electron-forge/maker-deb,@electron-forge/maker-rpm
+            platform: linux
 
     steps:
       - name: Checkout
@@ -115,7 +115,7 @@ jobs:
           cache: npm
 
       - name: Install Linux build deps
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y rpm fakeroot dpkg
@@ -123,8 +123,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Make distributables
-        run: npx electron-forge make ${{ matrix.forge_args }}
+      # Quote --targets: PowerShell treats @electron-forge/... as splat and empties makers.
+      - name: Make Windows
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          npx electron-forge make \
+            --targets="@electron-forge/maker-squirrel,@electron-forge/maker-zip"
+
+      # Build arches one-by-one so DMG paths don't collide ("Target already exists").
+      - name: Make macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in x64 arm64; do
+            echo "::group::macOS ${arch}"
+            npx electron-forge make \
+              --targets="@electron-forge/maker-zip,@electron-forge/maker-dmg" \
+              --arch="${arch}"
+            # Rename DMG before next arch reuses the same output name.
+            if compgen -G "out/make/*.dmg" > /dev/null; then
+              for dmg in out/make/*.dmg; do
+                base="$(basename "${dmg}" .dmg)"
+                mv -f "${dmg}" "out/make/${base}-${arch}.dmg"
+              done
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Make Linux
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          npx electron-forge make \
+            --targets="@electron-forge/maker-zip,@electron-forge/maker-deb,@electron-forge/maker-rpm"
 
       - name: Collect artifacts
         shell: bash
