@@ -1,0 +1,18 @@
+{
+  "appId": "com.goblinthug.pillsnative",
+  "appName": "Pills Native",
+  "webDir": "mobile/www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon_config_sample",
+      "iconColor": "#0A84FF"
+    }
+  }
+}

@@ -1,0 +1,150 @@
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.alarm-app {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+  opacity: 0;
+  transform: translateY(12px) scale(0.97);
+  animation: alarm-shell-in 0.36s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.alarm-app.is-leaving {
+  animation: alarm-shell-out 0.2s ease forwards;
+}
+
+@keyframes alarm-shell-in {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes alarm-shell-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.alarm-sheet {
+  width: 100%;
+  max-width: 360px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%),
+    var(--bg-drawer);
+  box-shadow: var(--shadow), var(--inset-highlight);
+  -webkit-app-region: no-drag;
+  animation: alarm-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes alarm-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.alarm-sheet__top {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.alarm-sheet__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-soft);
+  background: rgba(10, 132, 255, 0.14);
+  border: 1px solid rgba(10, 132, 255, 0.24);
+}
+
+html[data-theme='light'] .alarm-sheet__icon {
+  color: #0b4f9c;
+  background: rgba(0, 113, 227, 0.1);
+}
+
+.alarm-sheet__eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+  margin-bottom: 4px;
+}
+
+html[data-theme='light'] .alarm-sheet__eyebrow {
+  color: #0b4f9c;
+}
+
+.alarm-sheet__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.alarm-sheet__meta {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.alarm-sheet__time {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  padding-top: 2px;
+}
+
+.alarm-sheet__desc {
+  margin: 12px 0 0;
+  min-height: 18px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.alarm-sheet__actions {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.alarm-sheet__actions .btn {
+  width: 100%;
+  min-height: 38px;
+  height: auto;
+  padding: 10px 12px;
+  -webkit-app-region: no-drag;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.18s ease;
+}
+
+.alarm-sheet__actions .btn:hover {
+  transform: translateY(-1px);
+}

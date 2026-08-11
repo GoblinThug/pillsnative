@@ -1,0 +1,208 @@
+name: Release
+
+# Push to main → ensure tag vX.Y.Z + GitHub Release, then build
+# Windows + macOS + Linux + Android and upload assets (version from package.json).
+# Manual: Actions → Release → Run workflow.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Upload artifacts to GitHub Releases'
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version / publish flag
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          TAG="v${VERSION}"
+          if [[ "${{ github.event_name }}" == "push" ]] || [[ "${{ inputs.publish }}" == "true" ]]; then
+            PUBLISH=true
+          else
+            PUBLISH=false
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+          echo "Version ${VERSION} (tag ${TAG}), publish=${PUBLISH}"
+
+      - name: Ensure git tag and GitHub Release
+        if: steps.meta.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+          else
+            git tag "${TAG}" "${GITHUB_SHA}"
+            git push origin "refs/tags/${TAG}"
+            echo "Created tag ${TAG} → ${GITHUB_SHA}"
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists"
+          else
+            gh release create "${TAG}" \
+              --title "PillsNative ${VERSION}" \
+              --generate-notes \
+              --latest \
+              --verify-tag
+            echo "Created GitHub Release ${TAG}"
+          fi
+
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            forge_args: --targets=@electron-forge/maker-squirrel,@electron-forge/maker-zip
+          - os: macos-latest
+            forge_args: --targets=@electron-forge/maker-zip,@electron-forge/maker-dmg --arch=x64,arm64
+          - os: ubuntu-latest
+            forge_args: --targets=@electron-forge/maker-zip,@electron-forge/maker-deb,@electron-forge/maker-rpm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot dpkg
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Make distributables
+        run: npx electron-forge make ${{ matrix.forge_args }}
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find out/make -type f \( \
+            -name '*.exe' -o -name '*.nupkg' -o -name '*.zip' -o \
+            -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o \
+            -name '*.msi' -o -name 'RELEASES' \
+          \) -print -exec cp -v {} release-assets/ \;
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag }}"
+          shopt -s nullglob
+          files=(release-assets/*)
+          if (( ${#files[@]} == 0 )); then
+            echo "No artifacts to upload"
+            exit 1
+          fi
+          gh release upload "${TAG}" "${files[@]}" --clobber
+
+  android:
+    name: Android
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare mobile web assets
+        run: npm run mobile:prepare
+
+      - name: Add Capacitor Android platform
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          mkdir -p release-assets
+          APK="release-assets/PillsNative-android-${VERSION}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "${APK}"
+          gh release upload "${TAG}" "${APK}" --clobber

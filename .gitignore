@@ -1,2 +1,12 @@
 node_modules/
 out/
+dist/
+mobile/www/
+android/
+ios/
+*.apk
+*.aab
+.idea/
+.DS_Store
+Thumbs.db
+*.log
