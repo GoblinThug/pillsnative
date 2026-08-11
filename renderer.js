@@ -838,6 +838,93 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Музыка добавлена');
     });
 
+    const appVersionEl = document.getElementById('appVersion');
+    const updateStatusEl = document.getElementById('updateStatus');
+    const updateCheckBtn = document.getElementById('updateCheck');
+    const updateDownloadBtn = document.getElementById('updateDownload');
+    const updateInstallBtn = document.getElementById('updateInstall');
+    let updateStatus = { state: 'idle' };
+
+    function renderUpdateStatus(status) {
+        updateStatus = status || { state: 'idle' };
+        updateDownloadBtn.hidden = true;
+        updateInstallBtn.hidden = true;
+        updateCheckBtn.hidden = false;
+        updateCheckBtn.disabled = false;
+
+        switch (updateStatus.state) {
+            case 'checking':
+                updateStatusEl.textContent = 'Проверяем обновления…';
+                updateCheckBtn.disabled = true;
+                break;
+            case 'available':
+                updateStatusEl.textContent = updateStatus.manual
+                    ? `Доступна версия ${updateStatus.version}. На macOS скачайте её вручную с GitHub.`
+                    : `Доступна версия ${updateStatus.version}.`;
+                updateDownloadBtn.hidden = false;
+                updateDownloadBtn.textContent = updateStatus.manual ? 'Открыть Releases' : 'Скачать';
+                break;
+            case 'not-available':
+                updateStatusEl.textContent = `У вас актуальная версия (${updateStatus.version}).`;
+                break;
+            case 'downloading':
+                updateStatusEl.textContent = `Скачивание… ${Math.round(updateStatus.percent || 0)}%`;
+                updateCheckBtn.hidden = true;
+                break;
+            case 'ready':
+                updateStatusEl.textContent = `Версия ${updateStatus.version} скачана. Можно установить.`;
+                updateCheckBtn.hidden = true;
+                updateInstallBtn.hidden = false;
+                break;
+            case 'unsupported':
+                updateStatusEl.textContent = updateStatus.reason === 'portable'
+                    ? 'Автообновление недоступно в portable-сборке. Скачайте новую версию с Releases.'
+                    : 'Автообновление работает только в установленной сборке.';
+                break;
+            case 'error': {
+                const messages = {
+                    macUnsigned: 'На macOS без подписи Apple обновляйтесь через GitHub Releases.',
+                    network: 'Не удалось проверить обновления. Проверьте интернет.',
+                    notFound: 'Метаданные обновления не найдены в релизе.',
+                    checksum: 'Файл обновления повреждён. Попробуйте позже.',
+                    permission: 'Нет прав для установки обновления.',
+                    generic: 'Ошибка при проверке обновлений.',
+                };
+                updateStatusEl.textContent = messages[updateStatus.code] || messages.generic;
+                break;
+            }
+            default:
+                updateStatusEl.textContent = 'Можно проверить наличие новой версии.';
+                break;
+        }
+    }
+
+    updateCheckBtn.addEventListener('click', async () => {
+        renderUpdateStatus({ state: 'checking' });
+        const result = await window.electronAPI.checkForUpdates();
+        if (result) renderUpdateStatus(result);
+    });
+
+    updateDownloadBtn.addEventListener('click', async () => {
+        if (updateStatus.state === 'available' && updateStatus.manual) {
+            await window.electronAPI.openReleases();
+            return;
+        }
+        await window.electronAPI.downloadUpdate();
+    });
+
+    updateInstallBtn.addEventListener('click', () => {
+        window.electronAPI.installUpdate();
+    });
+
+    if (typeof window.electronAPI.onUpdateStatus === 'function') {
+        window.electronAPI.onUpdateStatus((status) => renderUpdateStatus(status));
+    }
+
+    void window.electronAPI.getAppVersion?.().then((version) => {
+        if (appVersionEl && version) appVersionEl.textContent = version;
+    }).catch(() => {});
+
     function collectDrugHistory() {
         const byName = new Map();
         allPills.forEach((pill) => {

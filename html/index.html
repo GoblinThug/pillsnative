@@ -242,6 +242,18 @@
             <div class="sound-list" id="soundList"></div>
             <button type="button" class="btn btn-secondary settings-upload" id="addCustomSound">Загрузить свою музыку</button>
         </section>
+        <section class="settings-section">
+            <div class="settings-section__label">Обновления</div>
+            <p class="settings-section__hint">Текущая версия: <span id="appVersion">—</span></p>
+            <div class="settings-update">
+                <div class="settings-update__status" id="updateStatus">Проверка обновлений доступна в установленной версии.</div>
+                <div class="settings-update__actions">
+                    <button type="button" class="btn btn-secondary" id="updateCheck">Проверить обновления</button>
+                    <button type="button" class="btn btn-primary" id="updateDownload" hidden>Скачать</button>
+                    <button type="button" class="btn btn-primary" id="updateInstall" hidden>Установить и перезапустить</button>
+                </div>
+            </div>
+        </section>
     </div>
 </aside>
 

@@ -1,10 +1,11 @@
 /**
  * Mobile bridge that mirrors window.electronAPI for Capacitor/Android builds.
+ * Reminders use native LocalNotifications so they fire when the app is closed.
  */
 (function initMobileBridge() {
     const PILLS_KEY = 'pillsnative.pills';
     const SETTINGS_KEY = 'pillsnative.settings';
-    const jobs = new Map();
+    const CHANNEL_ID = 'pills-alarms';
     const listeners = {
         pills: [],
         save: [],
@@ -30,6 +31,10 @@
         { id: 'soft-drop', name: 'Капли', file: 'soft-drop.wav' },
         { id: 'soft-breeze', name: 'Лёгкий бриз', file: 'soft-breeze.wav' },
     ];
+
+    function getLN() {
+        return window.Capacitor?.Plugins?.LocalNotifications || null;
+    }
 
     function readPills() {
         try {
@@ -84,13 +89,15 @@
         });
     }
 
-    function cancelJob(id) {
-        const key = String(id);
-        const timer = jobs.get(key);
-        if (timer) {
-            clearTimeout(timer);
-            jobs.delete(key);
+    /** Stable positive 32-bit id for Android notification cancel/schedule. */
+    function notificationIdFor(pillId, salt = 0) {
+        const raw = `${salt}:${pillId}`;
+        let hash = 2166136261;
+        for (let i = 0; i < raw.length; i += 1) {
+            hash ^= raw.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
         }
+        return (hash >>> 0) % 2147483646 + 1;
     }
 
     function nextTriggerDate(pill) {
@@ -99,6 +106,7 @@
         const now = new Date();
         let when = new Date();
         if (pill.notifyDaily) {
+            when.setSeconds(0, 0);
             when.setHours(hh, mm, 0, 0);
             if (when <= now) when.setDate(when.getDate() + 1);
             return when;
@@ -110,53 +118,218 @@
         return when;
     }
 
-    function triggerAlarm(pill, { snoozed = false } = {}) {
+    function alarmPayload(pill, { snoozed = false } = {}) {
         const settings = readSettings();
         const sound = SOUND_OPTIONS.find((item) => item.id === settings.soundId) || SOUND_OPTIONS[0];
-        const payload = {
+        return {
             ...pill,
             snoozed,
             theme: settings.theme,
             soundId: settings.soundId,
             soundSrc: `./assets/sounds/${sound.file}`,
         };
+    }
 
-        if (window.Capacitor?.Plugins?.LocalNotifications) {
-            window.Capacitor.Plugins.LocalNotifications.schedule({
-                notifications: [{
-                    id: Number(String(Date.now()).slice(-8)),
-                    title: snoozed ? 'Отложенное напоминание' : 'Пора принять лекарство',
-                    body: `${pill.drugName || 'Лекарство'} — ${pill.dosage || ''}`.trim(),
-                    schedule: { at: new Date(Date.now() + 200) },
-                }],
-            }).catch(() => {});
-        }
-
-        // Open alarm page in same webview.
+    function openAlarm(pill, opts = {}) {
+        const payload = alarmPayload(pill, opts);
         try {
             sessionStorage.setItem('pillsnative.alarm', JSON.stringify(payload));
-            window.location.href = './alarm.html';
+            if (!window.location.pathname.endsWith('alarm.html')) {
+                window.location.href = './alarm.html';
+            } else {
+                emit(listeners.alarmRing, payload);
+            }
         } catch {
             emit(listeners.alarmRing, payload);
         }
     }
 
-    function schedulePill(pill) {
-        cancelJob(pill.id);
-        const when = nextTriggerDate(pill);
-        if (!when) return;
-        const delay = Math.max(0, when.getTime() - Date.now());
-        const timer = setTimeout(() => {
-            triggerAlarm(pill);
-            jobs.delete(String(pill.id));
-            if (pill.notifyDaily) schedulePill(pill);
-        }, delay);
-        jobs.set(String(pill.id), timer);
+    async function ensurePermissions() {
+        const LN = getLN();
+        if (!LN) return false;
+        try {
+            let perm = await LN.checkPermissions();
+            if (perm.display !== 'granted') {
+                perm = await LN.requestPermissions();
+            }
+            return perm.display === 'granted';
+        } catch (error) {
+            console.error('[notifications] permissions', error);
+            return false;
+        }
     }
 
-    function rescheduleAll() {
-        [...jobs.keys()].forEach(cancelJob);
-        readPills().forEach(schedulePill);
+    async function ensureChannel() {
+        const LN = getLN();
+        if (!LN?.createChannel) return;
+        try {
+            await LN.createChannel({
+                id: CHANNEL_ID,
+                name: 'Напоминания о лекарствах',
+                description: 'Срабатывает даже когда приложение закрыто',
+                importance: 5,
+                visibility: 1,
+                sound: 'default',
+                vibration: true,
+                lights: true,
+            });
+        } catch (error) {
+            console.warn('[notifications] channel', error);
+        }
+    }
+
+    async function cancelNative(pillId) {
+        const LN = getLN();
+        if (!LN) return;
+        const ids = [
+            notificationIdFor(pillId, 0),
+            notificationIdFor(pillId, 1),
+        ].map((id) => ({ id }));
+        try {
+            await LN.cancel({ notifications: ids });
+        } catch (error) {
+            console.warn('[notifications] cancel', error);
+        }
+    }
+
+    function buildNotification(pill, when, { snoozed = false, idSalt = 0 } = {}) {
+        const [hh, mm] = String(pill.time || '09:00').split(':').map(Number);
+        const title = snoozed ? 'Отложенное напоминание' : 'Пора принять лекарство';
+        const body = `${pill.drugName || 'Лекарство'}${pill.dosage ? ` — ${pill.dosage}` : ''}`;
+        const base = {
+            id: notificationIdFor(pill.id, idSalt),
+            title,
+            body,
+            channelId: CHANNEL_ID,
+            smallIcon: 'ic_launcher',
+            largeIcon: 'ic_launcher',
+            autoCancel: true,
+            ongoing: false,
+            extra: {
+                pillId: String(pill.id),
+                snoozed: Boolean(snoozed),
+                drugName: pill.drugName || '',
+                dosage: pill.dosage || '',
+                time: pill.time || '',
+                description: pill.description || '',
+                notifyDaily: Boolean(pill.notifyDaily),
+                date: pill.date || null,
+            },
+        };
+
+        if (pill.notifyDaily && !snoozed) {
+            return {
+                ...base,
+                schedule: {
+                    on: { hour: hh, minute: mm },
+                    repeats: true,
+                    allowWhileIdle: true,
+                },
+            };
+        }
+
+        return {
+            ...base,
+            schedule: {
+                at: when,
+                allowWhileIdle: true,
+            },
+        };
+    }
+
+    async function schedulePill(pill) {
+        await cancelNative(pill.id);
+        const LN = getLN();
+        if (!LN) {
+            console.warn('[notifications] LocalNotifications plugin missing');
+            return;
+        }
+
+        const granted = await ensurePermissions();
+        if (!granted) {
+            console.warn('[notifications] permission denied');
+            return;
+        }
+        await ensureChannel();
+
+        const when = nextTriggerDate(pill);
+        if (!when && !pill.notifyDaily) return;
+
+        const notification = buildNotification(
+            pill,
+            when || nextTriggerDate({ ...pill, notifyDaily: true }),
+            { snoozed: false, idSalt: 0 },
+        );
+
+        try {
+            await LN.schedule({ notifications: [notification] });
+        } catch (error) {
+            console.error('[notifications] schedule', error);
+        }
+    }
+
+    async function scheduleSnooze(pill, minutes = 5) {
+        const LN = getLN();
+        if (!LN) return null;
+        await ensurePermissions();
+        await ensureChannel();
+        const when = new Date(Date.now() + minutes * 60 * 1000);
+        const notification = buildNotification(pill, when, { snoozed: true, idSalt: 1 });
+        try {
+            await LN.schedule({ notifications: [notification] });
+        } catch (error) {
+            console.error('[notifications] snooze', error);
+        }
+        return when.toISOString();
+    }
+
+    async function rescheduleAll() {
+        const pills = readPills();
+        const LN = getLN();
+        if (LN) {
+            try {
+                const pending = await LN.getPending();
+                const ours = (pending?.notifications || [])
+                    .filter((item) => item?.extra?.pillId || item?.extra?.drugName !== undefined)
+                    .map((item) => ({ id: item.id }));
+                if (ours.length) await LN.cancel({ notifications: ours });
+            } catch {
+                // ignore
+            }
+        }
+        for (const pill of pills) {
+            // eslint-disable-next-line no-await-in-loop
+            await schedulePill(pill);
+        }
+    }
+
+    function pillFromExtra(extra = {}) {
+        return {
+            id: extra.pillId || `notif-${Date.now()}`,
+            drugName: extra.drugName || 'Лекарство',
+            dosage: extra.dosage || '',
+            time: extra.time || '',
+            description: extra.description || '',
+            notifyDaily: Boolean(extra.notifyDaily),
+            date: extra.date || null,
+        };
+    }
+
+    function bindNotificationListeners() {
+        const LN = getLN();
+        if (!LN?.addListener || bindNotificationListeners.done) return;
+        bindNotificationListeners.done = true;
+
+        LN.addListener('localNotificationActionPerformed', (event) => {
+            const extra = event?.notification?.extra || {};
+            openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
+        });
+
+        LN.addListener('localNotificationReceived', (notification) => {
+            const extra = notification?.extra || {};
+            // App is in foreground — open confirmation UI.
+            openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
+        });
     }
 
     window.electronAPI = {
@@ -165,14 +338,14 @@
             const next = { ...data, id: Date.now() };
             pills.push(next);
             writePills(pills);
-            schedulePill(next);
+            void schedulePill(next);
             emit(listeners.save, 'Данные успешно сохранены!');
             emit(listeners.pills, pills);
         },
         getPills: () => {
             const pills = readPills();
             emit(listeners.pills, pills);
-            rescheduleAll();
+            void rescheduleAll();
         },
         updatePill: (data) => {
             const pills = readPills();
@@ -180,7 +353,7 @@
             if (index !== -1) {
                 pills[index] = data;
                 writePills(pills);
-                schedulePill(data);
+                void schedulePill(data);
             }
             emit(listeners.save, 'Данные успешно обновлены!');
             emit(listeners.pills, pills);
@@ -188,7 +361,7 @@
         deletePill: (id) => {
             const pills = readPills().filter((item) => String(item.id) !== String(id));
             writePills(pills);
-            cancelJob(id);
+            void cancelNative(id);
             emit(listeners.pills, pills);
             emit(listeners.deleted, 'Таблетка успешно удалена!');
         },
@@ -211,12 +384,10 @@
         onAlarmRing: (cb) => listeners.alarmRing.push(cb),
         onAlarmStop: (cb) => listeners.alarmStop.push(cb),
         snoozeAlarm: async (payload) => {
-            const minutes = payload?.minutes || 5;
-            const when = new Date(Date.now() + minutes * 60 * 1000);
-            setTimeout(() => triggerAlarm(payload, { snoozed: true }), minutes * 60 * 1000);
+            const whenIso = await scheduleSnooze(payload, payload?.minutes || 5);
             emit(listeners.alarmStop);
             window.location.href = './index.html';
-            return when.toISOString();
+            return whenIso;
         },
         dismissAlarm: async () => {
             emit(listeners.alarmStop);
@@ -244,10 +415,20 @@
         }),
         removeCustomSound: async () => publicSettings(),
         onSettingsChanged: (cb) => listeners.settings.push(cb),
+        getAppVersion: async () => 'mobile',
+        checkForUpdates: async () => ({ state: 'unsupported', reason: 'dev' }),
+        downloadUpdate: async () => false,
+        installUpdate: async () => {},
+        openReleases: async () => {
+            window.open('https://github.com/GoblinThug/pillsnative/releases/latest', '_blank');
+        },
+        onUpdateStatus: () => {},
     };
 
     document.addEventListener('DOMContentLoaded', () => {
         document.documentElement.classList.add('is-mobile');
+        bindNotificationListeners();
+
         if (window.location.pathname.endsWith('alarm.html')) {
             try {
                 const raw = sessionStorage.getItem('pillsnative.alarm');
@@ -259,7 +440,12 @@
             } catch {
                 // ignore
             }
+        } else {
+            void (async () => {
+                await ensurePermissions();
+                await ensureChannel();
+                await rescheduleAll();
+            })();
         }
-        rescheduleAll();
     });
 }());

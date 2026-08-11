@@ -88,22 +88,10 @@ jobs:
             echo "Created GitHub Release ${TAG}"
           fi
 
-  desktop:
-    name: Desktop (${{ matrix.os }})
+  windows:
     needs: prepare
     if: needs.prepare.outputs.publish == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: macos
-          - os: ubuntu-latest
-            platform: linux
-
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -114,75 +102,58 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Install Linux build deps
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm fakeroot dpkg
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish Windows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
+
+  macos:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # Quote --targets: PowerShell treats @electron-forge/... as splat and empties makers.
-      - name: Make Windows
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          npx electron-forge make \
-            --targets="@electron-forge/maker-squirrel,@electron-forge/maker-zip"
-
-      # Build arches one-by-one so DMG paths don't collide ("Target already exists").
-      - name: Make macOS
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          set -euo pipefail
-          for arch in x64 arm64; do
-            echo "::group::macOS ${arch}"
-            npx electron-forge make \
-              --targets="@electron-forge/maker-zip,@electron-forge/maker-dmg" \
-              --arch="${arch}"
-            # Rename DMG before next arch reuses the same output name.
-            if compgen -G "out/make/*.dmg" > /dev/null; then
-              for dmg in out/make/*.dmg; do
-                base="$(basename "${dmg}" .dmg)"
-                mv -f "${dmg}" "out/make/${base}-${arch}.dmg"
-              done
-            fi
-            echo "::endgroup::"
-          done
-
-      - name: Make Linux
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          npx electron-forge make \
-            --targets="@electron-forge/maker-zip,@electron-forge/maker-deb,@electron-forge/maker-rpm"
-
-      - name: Collect artifacts
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          find out/make -type f \( \
-            -name '*.exe' -o -name '*.nupkg' -o -name '*.zip' -o \
-            -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o \
-            -name '*.msi' -o -name 'RELEASES' \
-          \) -print -exec cp -v {} release-assets/ \;
-
-      - name: Upload to GitHub Release
+      - name: Build & publish macOS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ needs.prepare.outputs.tag }}"
-          shopt -s nullglob
-          files=(release-assets/*)
-          if (( ${#files[@]} == 0 )); then
-            echo "No artifacts to upload"
-            exit 1
-          fi
-          gh release upload "${TAG}" "${files[@]}" --clobber
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac --publish always
+
+  linux:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish Linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --publish always
 
   android:
     name: Android
@@ -219,6 +190,9 @@ jobs:
 
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Patch Android notification permissions
+        run: node scripts/patch-android-manifest.js
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew

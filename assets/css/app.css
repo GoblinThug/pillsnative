@@ -1523,6 +1523,28 @@ html[data-theme='light'] .settings-backdrop {
   margin-top: 10px;
 }
 
+.settings-update {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-update__status {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.settings-update__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-update__actions .btn {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+
 html.is-mobile .traffic-lights,
 html.is-mobile .titlebar__drag {
   display: none;

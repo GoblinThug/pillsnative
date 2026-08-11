@@ -45,7 +45,7 @@
 | 📥 | Трей: свернуть в фон и не потерять расписание |
 | 📱 | Сборка для Android (Capacitor) |
 
-Текущая версия в репозитории: **`2.0.0`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
+Текущая версия в репозитории: **`2.0.1`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
 
 ---
 
@@ -57,8 +57,8 @@
 
 | Файл | Когда брать |
 |---|---|
-| `PillsNative-…Setup….exe` / Squirrel installer | Обычная установка — **рекомендуется** |
-| `…-win32-…zip` | Портативный архив без установщика |
+| `PillsNative-Setup-….exe` | Обычная установка — **рекомендуется**, есть автообновление |
+| `PillsNative-Portable-….exe` | Без установки; обновлять вручную с Releases |
 
 1. Скачайте installer или zip.
 2. Запустите установщик или распакуйте архив.
@@ -89,22 +89,22 @@
 
 | Файл | Когда брать |
 |---|---|
-| `….deb` | Debian / Ubuntu и производные |
-| `….rpm` | Fedora / openSUSE и производные |
-| `…-linux-….zip` | Архив без установки |
+| `PillsNative-…-x64.AppImage` | Универсальный запуск — **рекомендуется**, есть автообновление |
+| `PillsNative-…-x64.deb` | Установка в Debian / Ubuntu |
+
+**AppImage**
+
+```bash
+chmod +x PillsNative-*-x64.AppImage
+./PillsNative-*-x64.AppImage
+```
 
 **deb**
 
 ```bash
-sudo apt install ./pillsnative_*.deb
+sudo apt install ./PillsNative-*-x64.deb
 # или
-sudo dpkg -i pillsnative_*.deb
-```
-
-**rpm**
-
-```bash
-sudo rpm -i pillsnative-*.rpm
+sudo dpkg -i PillsNative-*-x64.deb
 ```
 
 ### 🤖 Android
@@ -164,6 +164,29 @@ sudo rpm -i pillsnative-*.rpm
 
 ---
 
+## ⬆️ Обновления
+
+### Windows
+
+Установленная версия (**не** Portable) проверяет обновления при запуске и из **Настроек**.
+
+1. Появится статус о новой версии.
+2. Скачайте обновление в настройках и установите (перезапуск).
+
+Portable обновляется только вручную с [Releases](https://github.com/GoblinThug/pillsnative/releases).
+
+### macOS
+
+Автоустановка через ShipIt **недоступна** (сборка без подписи Apple).  
+При новой версии приложение предложит открыть **GitHub Releases** — скачайте новый `.dmg` и замените приложение в **Программах**.
+
+### Linux
+
+**AppImage** проверяет обновления при запуске и из **Настроек** (нужен `latest-linux.yml` в релизе).  
+**.deb** — обновляйте вручную с [Releases](https://github.com/GoblinThug/pillsnative/releases).
+
+---
+
 ## 🔐 Данные и приватность
 
 - Расписание и настройки хранятся **только локально** на устройстве.
@@ -181,6 +204,7 @@ sudo rpm -i pillsnative-*.rpm
 | На Mac «повреждено» | ПКМ → Открыть или `xattr -cr` для `.app` |
 | SmartScreen (Win) | Подробнее → Выполнить в любом случае |
 | Android не ставит APK | Разрешите установку из неизвестных источников |
+| Нет уведомлений (Android) | Разрешите уведомления при первом запуске; не запрещайте автозапуск / точные будильники в настройках батареи |
 | Вопросы и баги | [Issues](https://github.com/GoblinThug/pillsnative/issues) |
 
 ---
@@ -199,17 +223,19 @@ npm start
 Локальная сборка:
 
 ```bash
-npm run make            # текущая ОС → out/make
-npm run mobile:prepare  # веб-ассеты для Capacitor
+npm run dist:win       # Windows → release/
+npm run dist:mac       # macOS (нужен Mac)
+npm run dist:linux     # Linux → AppImage + deb
+npm run mobile:prepare # веб-ассеты для Capacitor
 ```
 
 ### Релиз через GitHub Actions
 
-Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) собирает **Windows, macOS, Linux и Android** и публикует GitHub Release.
+Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) собирает **Windows, macOS, Linux и Android** через **electron-builder** и публикует GitHub Release.
 
 1. Поднимите `version` в `package.json`.
 2. Закоммитьте и запушьте в `main`.
-3. Actions → **Release** создаст тег `vX.Y.Z` (если нужно) и релиз с названием **`PillsNative X.Y.Z`**, затем зальёт артефакты.
+3. Actions → **Release** создаст тег `vX.Y.Z` (если нужно) и релиз **`PillsNative X.Y.Z`**, затем зальёт артефакты (`latest.yml`, `latest-mac.yml`, `latest-linux.yml`, Setup/Portable, DMG/ZIP, AppImage/deb, APK).
 
 Пуш тега `v*` или ручной **Run workflow** тоже запускают публикацию.
 
@@ -235,7 +261,7 @@ Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) соб
 | 📥 | System tray background mode |
 | 📱 | Android build via Capacitor |
 
-Repo version: **`2.0.0`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
+Repo version: **`2.0.1`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
 
 ---
 

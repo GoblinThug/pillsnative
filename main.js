@@ -2,6 +2,11 @@ const { app, BrowserWindow, Notification, ipcMain, Tray, Menu, dialog, protocol 
 const path = require('path');
 const fs = require('fs');
 const schedule = require('node-schedule');
+const { initAutoUpdater } = require('./updater');
+
+if (require('electron-squirrel-startup')) {
+    app.quit();
+}
 
 protocol.registerSchemesAsPrivileged([
     {
@@ -839,6 +844,7 @@ app.whenReady().then(() => {
     createWindow();
     createTray();
     rescheduleAll();
+    initAutoUpdater();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {

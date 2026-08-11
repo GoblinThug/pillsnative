@@ -1,5 +1,6 @@
 node_modules/
 out/
+release/
 dist/
 mobile/www/
 android/
@@ -10,3 +11,6 @@ ios/
 .DS_Store
 Thumbs.db
 *.log
+latest.yml
+latest-mac.yml
+latest-linux.yml

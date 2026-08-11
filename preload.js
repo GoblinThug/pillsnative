@@ -27,4 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addCustomSound: () => ipcRenderer.invoke('settings:addCustomSound'),
     removeCustomSound: (soundId) => ipcRenderer.invoke('settings:removeCustomSound', soundId),
     onSettingsChanged: (callback) => ipcRenderer.on('settings:changed', (_event, settings) => callback(settings)),
+    getAppVersion: () => ipcRenderer.invoke('update:getVersion'),
+    checkForUpdates: () => ipcRenderer.invoke('update:check'),
+    downloadUpdate: () => ipcRenderer.invoke('update:download'),
+    installUpdate: () => ipcRenderer.invoke('update:install'),
+    openReleases: () => ipcRenderer.invoke('update:openReleases'),
+    onUpdateStatus: (callback) => ipcRenderer.on('update:status', (_event, status) => callback(status)),
 });
