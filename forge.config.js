@@ -2,14 +2,36 @@ const path = require('path');
 const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
+const ignorePatterns = [
+  /^\/\.git($|\/)/,
+  /^\/\.github($|\/)/,
+  /^\/\.idea($|\/)/,
+  /^\/out($|\/)/,
+  /^\/mobile($|\/)/,
+  /^\/android($|\/)/,
+  /^\/ios($|\/)/,
+  /^\/scripts($|\/)/,
+  /^\/node_modules\/@tailwindcss($|\/)/,
+  /^\/node_modules\/tailwindcss($|\/)/,
+  /^\/node_modules\/@parcel($|\/)/,
+  /^\/node_modules\/@capacitor($|\/)/,
+  /^\/capacitor\.config\.json$/,
+  /^\/README\.md$/,
+];
+
 module.exports = {
   packagerConfig: {
     asar: true,
     icon: path.join(__dirname, 'assets', 'img', 'icon'),
     appBundleId: 'com.goblinthug.pillsnative',
     executableName: 'pillsnative',
+    // App uses prebuilt CSS — no native Tailwind/@parcel modules at runtime.
+    ignore: (file) => ignorePatterns.some((pattern) => pattern.test(file)),
   },
-  rebuildConfig: {},
+  // No native addons required by the app; skip node-gyp rebuild in CI.
+  rebuildConfig: {
+    onlyModules: [],
+  },
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
@@ -27,6 +49,7 @@ module.exports = {
       config: {
         format: 'ULFO',
         icon: path.join(__dirname, 'assets', 'img', 'icon.png'),
+        name: 'PillsNative',
       },
     },
     {
