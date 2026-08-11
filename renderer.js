@@ -648,7 +648,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    window.electronAPI.getPills();
     window.electronAPI.onGetPillsResponse((pills) => {
         allPills = Array.isArray(pills) ? pills : [];
         toolbarSubtitle.textContent = allPills.length
@@ -656,6 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Напоминания о лекарствах';
         renderPills(allPills);
     });
+    window.electronAPI.getPills();
 
     deleteButton.addEventListener('click', () => {
         if (currentPillId) window.electronAPI.deletePill(currentPillId);

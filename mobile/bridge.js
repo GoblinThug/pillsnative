@@ -1,11 +1,14 @@
 /**
- * Mobile bridge that mirrors window.electronAPI for Capacitor/Android builds.
- * Reminders use native LocalNotifications so they fire when the app is closed.
+ * Mobile bridge for Capacitor/Android.
+ * - Persists data via Preferences (survives app kill; localStorage alone is unreliable).
+ * - Schedules native LocalNotifications with allowWhileIdle (fire when app is closed).
  */
 (function initMobileBridge() {
     const PILLS_KEY = 'pillsnative.pills';
     const SETTINGS_KEY = 'pillsnative.settings';
+    const MIGRATED_KEY = 'pillsnative.migrated-v1';
     const CHANNEL_ID = 'pills-alarms';
+
     const listeners = {
         pills: [],
         save: [],
@@ -32,42 +35,151 @@
         { id: 'soft-breeze', name: 'Лёгкий бриз', file: 'soft-breeze.wav' },
     ];
 
-    function getLN() {
-        return window.Capacitor?.Plugins?.LocalNotifications || null;
+    let storageReady = null;
+    let memoryPills = null;
+    let memorySettings = null;
+
+    function plugin(name) {
+        return window.Capacitor?.Plugins?.[name] || null;
     }
 
-    function readPills() {
+    function getPreferences() {
+        return plugin('Preferences');
+    }
+
+    function getLN() {
+        return plugin('LocalNotifications');
+    }
+
+    function getApp() {
+        return plugin('App');
+    }
+
+    function emit(list, payload) {
+        list.forEach((cb) => {
+            try {
+                cb(payload);
+            } catch {
+                // ignore
+            }
+        });
+    }
+
+    async function prefGet(key) {
+        const Preferences = getPreferences();
+        if (Preferences) {
+            const result = await Preferences.get({ key });
+            return result?.value ?? null;
+        }
         try {
-            const parsed = JSON.parse(localStorage.getItem(PILLS_KEY) || '[]');
-            return Array.isArray(parsed) ? parsed : [];
+            return localStorage.getItem(key);
         } catch {
-            return [];
+            return null;
         }
     }
 
-    function writePills(pills) {
-        localStorage.setItem(PILLS_KEY, JSON.stringify(pills));
+    async function prefSet(key, value) {
+        const Preferences = getPreferences();
+        if (Preferences) {
+            await Preferences.set({ key, value });
+            return;
+        }
+        localStorage.setItem(key, value);
     }
 
-    function readSettings() {
+    async function ensureStorageReady() {
+        if (storageReady) return storageReady;
+        storageReady = (async () => {
+            const Preferences = getPreferences();
+            if (!Preferences) return;
+
+            // One-time migrate from WebView localStorage → native Preferences.
+            const migrated = await prefGet(MIGRATED_KEY);
+            if (migrated === '1') return;
+
+            try {
+                const legacyPills = localStorage.getItem(PILLS_KEY);
+                const legacySettings = localStorage.getItem(SETTINGS_KEY);
+                const existingPills = await prefGet(PILLS_KEY);
+                const existingSettings = await prefGet(SETTINGS_KEY);
+
+                if (legacyPills && !existingPills) {
+                    await Preferences.set({ key: PILLS_KEY, value: legacyPills });
+                }
+                if (legacySettings && !existingSettings) {
+                    await Preferences.set({ key: SETTINGS_KEY, value: legacySettings });
+                }
+            } catch (error) {
+                console.warn('[storage] migrate', error);
+            }
+
+            await Preferences.set({ key: MIGRATED_KEY, value: '1' });
+        })();
+        return storageReady;
+    }
+
+    async function readPills() {
+        await ensureStorageReady();
+        if (Array.isArray(memoryPills)) return memoryPills;
         try {
-            const parsed = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-            return {
+            const raw = await prefGet(PILLS_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            memoryPills = Array.isArray(parsed) ? parsed : [];
+        } catch {
+            memoryPills = [];
+        }
+        return memoryPills;
+    }
+
+    async function writePills(pills) {
+        memoryPills = Array.isArray(pills) ? pills : [];
+        await ensureStorageReady();
+        await prefSet(PILLS_KEY, JSON.stringify(memoryPills));
+        // Mirror to localStorage as a backup for older webviews.
+        try {
+            localStorage.setItem(PILLS_KEY, JSON.stringify(memoryPills));
+        } catch {
+            // ignore
+        }
+    }
+
+    async function readSettings() {
+        await ensureStorageReady();
+        if (memorySettings) return memorySettings;
+        try {
+            const raw = await prefGet(SETTINGS_KEY);
+            const parsed = raw ? JSON.parse(raw) : {};
+            memorySettings = {
                 theme: parsed.theme === 'light' ? 'light' : 'dark',
-                soundId: SOUND_OPTIONS.some((s) => s.id === parsed.soundId) ? parsed.soundId : 'soft-marimba',
+                soundId: SOUND_OPTIONS.some((s) => s.id === parsed.soundId)
+                    ? parsed.soundId
+                    : 'soft-marimba',
             };
         } catch {
-            return { theme: 'dark', soundId: 'soft-marimba' };
+            memorySettings = { theme: 'dark', soundId: 'soft-marimba' };
         }
+        return memorySettings;
     }
 
-    function writeSettings(next) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-        return next;
+    async function writeSettings(next) {
+        memorySettings = {
+            theme: next.theme === 'light' ? 'light' : 'dark',
+            soundId: SOUND_OPTIONS.some((s) => s.id === next.soundId)
+                ? next.soundId
+                : 'soft-marimba',
+        };
+        await ensureStorageReady();
+        await prefSet(SETTINGS_KEY, JSON.stringify(memorySettings));
+        try {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(memorySettings));
+        } catch {
+            // ignore
+        }
+        return memorySettings;
     }
 
-    function publicSettings() {
-        const settings = readSettings();
+    async function publicSettings() {
+        const settings = await readSettings();
         return {
             ...settings,
             sounds: SOUND_OPTIONS.map((item) => ({
@@ -79,17 +191,6 @@
         };
     }
 
-    function emit(list, payload) {
-        list.forEach((cb) => {
-            try {
-                cb(payload);
-            } catch {
-                // ignore listener errors
-            }
-        });
-    }
-
-    /** Stable positive 32-bit id for Android notification cancel/schedule. */
     function notificationIdFor(pillId, salt = 0) {
         const raw = `${salt}:${pillId}`;
         let hash = 2166136261;
@@ -118,8 +219,8 @@
         return when;
     }
 
-    function alarmPayload(pill, { snoozed = false } = {}) {
-        const settings = readSettings();
+    async function alarmPayload(pill, { snoozed = false } = {}) {
+        const settings = await readSettings();
         const sound = SOUND_OPTIONS.find((item) => item.id === settings.soundId) || SOUND_OPTIONS[0];
         return {
             ...pill,
@@ -130,17 +231,32 @@
         };
     }
 
-    function openAlarm(pill, opts = {}) {
-        const payload = alarmPayload(pill, opts);
+    async function openAlarm(pill, opts = {}) {
+        const payload = await alarmPayload(pill, opts);
         try {
             sessionStorage.setItem('pillsnative.alarm', JSON.stringify(payload));
-            if (!window.location.pathname.endsWith('alarm.html')) {
+            if (!/alarm\.html$/i.test(window.location.pathname)) {
                 window.location.href = './alarm.html';
             } else {
                 emit(listeners.alarmRing, payload);
             }
         } catch {
             emit(listeners.alarmRing, payload);
+        }
+    }
+
+    async function ensureExactAlarms() {
+        const LN = getLN();
+        if (!LN?.checkExactNotificationSetting) return;
+        try {
+            const status = await LN.checkExactNotificationSetting();
+            const exact = status?.exact_alarm || status?.exactAlarm;
+            if (exact === 'granted') return;
+            if (typeof LN.changeExactNotificationSetting === 'function') {
+                await LN.changeExactNotificationSetting();
+            }
+        } catch (error) {
+            console.warn('[notifications] exact alarm setting', error);
         }
     }
 
@@ -151,6 +267,9 @@
             let perm = await LN.checkPermissions();
             if (perm.display !== 'granted') {
                 perm = await LN.requestPermissions();
+            }
+            if (perm.display === 'granted') {
+                await ensureExactAlarms();
             }
             return perm.display === 'granted';
         } catch (error) {
@@ -166,7 +285,7 @@
             await LN.createChannel({
                 id: CHANNEL_ID,
                 name: 'Напоминания о лекарствах',
-                description: 'Срабатывает даже когда приложение закрыто',
+                description: 'Работает, даже когда приложение закрыто',
                 importance: 5,
                 visibility: 1,
                 sound: 'default',
@@ -181,10 +300,7 @@
     async function cancelNative(pillId) {
         const LN = getLN();
         if (!LN) return;
-        const ids = [
-            notificationIdFor(pillId, 0),
-            notificationIdFor(pillId, 1),
-        ].map((id) => ({ id }));
+        const ids = [0, 1].map((salt) => ({ id: notificationIdFor(pillId, salt) }));
         try {
             await LN.cancel({ notifications: ids });
         } catch (error) {
@@ -201,8 +317,6 @@
             title,
             body,
             channelId: CHANNEL_ID,
-            smallIcon: 'ic_launcher',
-            largeIcon: 'ic_launcher',
             autoCancel: true,
             ongoing: false,
             extra: {
@@ -241,7 +355,7 @@
         await cancelNative(pill.id);
         const LN = getLN();
         if (!LN) {
-            console.warn('[notifications] LocalNotifications plugin missing');
+            console.warn('[notifications] plugin missing — reminders need a native build');
             return;
         }
 
@@ -252,17 +366,16 @@
         }
         await ensureChannel();
 
-        const when = nextTriggerDate(pill);
+        let when = nextTriggerDate(pill);
+        if (!when && pill.notifyDaily) {
+            when = nextTriggerDate({ ...pill, notifyDaily: true });
+        }
         if (!when && !pill.notifyDaily) return;
 
-        const notification = buildNotification(
-            pill,
-            when || nextTriggerDate({ ...pill, notifyDaily: true }),
-            { snoozed: false, idSalt: 0 },
-        );
-
+        const notification = buildNotification(pill, when, { snoozed: false, idSalt: 0 });
         try {
             await LN.schedule({ notifications: [notification] });
+            console.log('[notifications] scheduled', pill.drugName, notification.schedule);
         } catch (error) {
             console.error('[notifications] schedule', error);
         }
@@ -284,15 +397,13 @@
     }
 
     async function rescheduleAll() {
-        const pills = readPills();
+        const pills = await readPills();
         const LN = getLN();
-        if (LN) {
+        if (LN?.getPending) {
             try {
                 const pending = await LN.getPending();
-                const ours = (pending?.notifications || [])
-                    .filter((item) => item?.extra?.pillId || item?.extra?.drugName !== undefined)
-                    .map((item) => ({ id: item.id }));
-                if (ours.length) await LN.cancel({ notifications: ours });
+                const cancel = (pending?.notifications || []).map((item) => ({ id: item.id }));
+                if (cancel.length) await LN.cancel({ notifications: cancel });
             } catch {
                 // ignore
             }
@@ -322,48 +433,71 @@
 
         LN.addListener('localNotificationActionPerformed', (event) => {
             const extra = event?.notification?.extra || {};
-            openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
+            void openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
         });
 
         LN.addListener('localNotificationReceived', (notification) => {
             const extra = notification?.extra || {};
-            // App is in foreground — open confirmation UI.
-            openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
+            void openAlarm(pillFromExtra(extra), { snoozed: Boolean(extra.snoozed) });
+        });
+    }
+
+    function bindAppListeners() {
+        const App = getApp();
+        if (!App?.addListener || bindAppListeners.done) return;
+        bindAppListeners.done = true;
+
+        App.addListener('appStateChange', ({ isActive }) => {
+            if (!isActive) return;
+            void (async () => {
+                memoryPills = null;
+                const pills = await readPills();
+                emit(listeners.pills, pills);
+                await rescheduleAll();
+            })();
         });
     }
 
     window.electronAPI = {
         saveFormData: (data) => {
-            const pills = readPills();
-            const next = { ...data, id: Date.now() };
-            pills.push(next);
-            writePills(pills);
-            void schedulePill(next);
-            emit(listeners.save, 'Данные успешно сохранены!');
-            emit(listeners.pills, pills);
+            void (async () => {
+                const pills = await readPills();
+                const next = { ...data, id: Date.now() };
+                pills.push(next);
+                await writePills(pills);
+                await schedulePill(next);
+                emit(listeners.save, 'Данные успешно сохранены!');
+                emit(listeners.pills, pills);
+            })();
         },
         getPills: () => {
-            const pills = readPills();
-            emit(listeners.pills, pills);
-            void rescheduleAll();
+            void (async () => {
+                const pills = await readPills();
+                emit(listeners.pills, pills);
+                await rescheduleAll();
+            })();
         },
         updatePill: (data) => {
-            const pills = readPills();
-            const index = pills.findIndex((item) => String(item.id) === String(data.id));
-            if (index !== -1) {
-                pills[index] = data;
-                writePills(pills);
-                void schedulePill(data);
-            }
-            emit(listeners.save, 'Данные успешно обновлены!');
-            emit(listeners.pills, pills);
+            void (async () => {
+                const pills = await readPills();
+                const index = pills.findIndex((item) => String(item.id) === String(data.id));
+                if (index !== -1) {
+                    pills[index] = data;
+                    await writePills(pills);
+                    await schedulePill(data);
+                }
+                emit(listeners.save, 'Данные успешно обновлены!');
+                emit(listeners.pills, await readPills());
+            })();
         },
         deletePill: (id) => {
-            const pills = readPills().filter((item) => String(item.id) !== String(id));
-            writePills(pills);
-            void cancelNative(id);
-            emit(listeners.pills, pills);
-            emit(listeners.deleted, 'Таблетка успешно удалена!');
+            void (async () => {
+                const pills = (await readPills()).filter((item) => String(item.id) !== String(id));
+                await writePills(pills);
+                await cancelNative(id);
+                emit(listeners.pills, pills);
+                emit(listeners.deleted, 'Таблетка успешно удалена!');
+            })();
         },
         onGetPillsResponse: (cb) => listeners.pills.push(cb),
         onSaveResponse: (cb) => listeners.save.push(cb),
@@ -371,8 +505,11 @@
         windowMinimize: async () => false,
         windowMaximizeToggle: async () => false,
         windowClose: async () => {
-            if (window.Capacitor?.Plugins?.App) {
-                window.Capacitor.Plugins.App.exitApp();
+            // Never exitApp(): process kill cancels reliable delivery UX and
+            // looks like "app doesn't stay in background". Minimize instead.
+            const App = getApp();
+            if (App?.minimizeApp) {
+                await App.minimizeApp();
             }
             return true;
         },
@@ -400,17 +537,17 @@
         isDev: async () => false,
         getSettings: async () => publicSettings(),
         setSettings: async (patch = {}) => {
-            const current = readSettings();
-            const next = writeSettings({
+            const current = await readSettings();
+            await writeSettings({
                 theme: patch.theme ?? current.theme,
                 soundId: patch.soundId ?? current.soundId,
             });
-            const pub = publicSettings();
+            const pub = await publicSettings();
             emit(listeners.settings, pub);
             return pub;
         },
         addCustomSound: async () => ({
-            ...publicSettings(),
+            ...(await publicSettings()),
             error: 'На Android загрузите звук через файловый менеджер в следующей версии',
         }),
         removeCustomSound: async () => publicSettings(),
@@ -428,8 +565,9 @@
     document.addEventListener('DOMContentLoaded', () => {
         document.documentElement.classList.add('is-mobile');
         bindNotificationListeners();
+        bindAppListeners();
 
-        if (window.location.pathname.endsWith('alarm.html')) {
+        if (/alarm\.html$/i.test(window.location.pathname)) {
             try {
                 const raw = sessionStorage.getItem('pillsnative.alarm');
                 if (raw) {
@@ -440,12 +578,16 @@
             } catch {
                 // ignore
             }
-        } else {
-            void (async () => {
-                await ensurePermissions();
-                await ensureChannel();
-                await rescheduleAll();
-            })();
+            return;
         }
+
+        void (async () => {
+            await ensureStorageReady();
+            await ensurePermissions();
+            await ensureChannel();
+            const pills = await readPills();
+            emit(listeners.pills, pills);
+            await rescheduleAll();
+        })();
     });
 }());

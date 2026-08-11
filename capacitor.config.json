@@ -2,7 +2,6 @@
   "appId": "com.goblinthug.pillsnative",
   "appName": "Pills Native",
   "webDir": "mobile/www",
-  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
   },
@@ -13,6 +12,7 @@
     "LocalNotifications": {
       "iconColor": "#0A84FF",
       "sound": "default"
-    }
+    },
+    "Preferences": {}
   }
 }

@@ -20,6 +20,7 @@ const permissions = [
     'android.permission.RECEIVE_BOOT_COMPLETED',
     'android.permission.VIBRATE',
     'android.permission.WAKE_LOCK',
+    'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
 ];
 
 let changed = false;

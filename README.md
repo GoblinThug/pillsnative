@@ -204,7 +204,8 @@ Portable обновляется только вручную с [Releases](https:
 | На Mac «повреждено» | ПКМ → Открыть или `xattr -cr` для `.app` |
 | SmartScreen (Win) | Подробнее → Выполнить в любом случае |
 | Android не ставит APK | Разрешите установку из неизвестных источников |
-| Нет уведомлений (Android) | Разрешите уведомления при первом запуске; не запрещайте автозапуск / точные будильники в настройках батареи |
+| Нет уведомлений (Android) | Разрешите уведомления и точные будильники; в настройках батареи отключите ограничения для PillsNative / разрешите автозапуск. Не «останавливайте» приложение принудительно — закрытие крестиком сворачивает в фон |
+| Пустой список после перезапуска (Android) | Обновите APK (данные пишутся в Preferences). Старые локальные данные могли теряться в WebView |
 | Вопросы и баги | [Issues](https://github.com/GoblinThug/pillsnative/issues) |
 
 ---
@@ -344,6 +345,8 @@ Data stays local in Documents (`pills.json`, `pills-settings.json`).
 | macOS “damaged” | Right-click → Open / `xattr -cr` |
 | Windows SmartScreen | More info → Run anyway |
 | Android install blocked | Allow unknown sources |
+| No notifications (Android) | Allow notifications + exact alarms; disable battery restrictions / enable autostart for PillsNative. Closing with × minimizes — don’t force-stop the app |
+| Empty list after restart (Android) | Update the APK (data is stored in Preferences). Older builds could lose WebView localStorage |
 | Bugs | [Issues](https://github.com/GoblinThug/pillsnative/issues) |
 
 ---
