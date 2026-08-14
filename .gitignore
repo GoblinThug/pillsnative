@@ -3,8 +3,8 @@ out/
 release/
 dist/
 mobile/www/
-android/
-ios/
+/android/
+/ios/
 *.apk
 *.aab
 .idea/

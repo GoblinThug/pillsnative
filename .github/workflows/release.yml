@@ -186,7 +186,12 @@ jobs:
         run: npm run mobile:prepare
 
       - name: Add Capacitor Android platform
-        run: npx cap add android
+        run: |
+          if [ -d android ]; then
+            echo "android/ already present — skip cap add"
+          else
+            npx cap add android
+          fi
 
       - name: Sync Capacitor
         run: npx cap sync android
