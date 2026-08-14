@@ -1435,6 +1435,55 @@ html[data-theme='light'] .settings-backdrop {
   gap: 8px;
 }
 
+.settings-options--stack {
+  grid-template-columns: 1fr;
+}
+
+.permission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.permission-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.permission-row.is-ok {
+  border-color: rgba(48, 209, 88, 0.35);
+}
+
+.permission-row__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.permission-row__hint {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.permission-row__btn {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.permission-row.is-ok .permission-row__btn {
+  display: none;
+}
+
 .settings-option {
   height: 38px;
   border-radius: 10px;

@@ -237,6 +237,38 @@
             </div>
         </section>
         <section class="settings-section">
+            <div class="settings-section__label">Способ напоминания</div>
+            <p class="settings-section__hint">Окно поверх всех приложений, уведомление в шторке — или оба сразу.</p>
+            <div class="settings-options settings-options--stack" id="alertModeOptions">
+                <button type="button" class="settings-option" data-alert-mode="overlay">Окно поверх всех</button>
+                <button type="button" class="settings-option" data-alert-mode="notification">Уведомление</button>
+                <button type="button" class="settings-option" data-alert-mode="both">Оба способа</button>
+            </div>
+            <div class="permission-list" id="permissionList" hidden>
+                <div class="permission-row">
+                    <div>
+                        <div class="permission-row__title">Окно поверх приложений</div>
+                        <div class="permission-row__hint" id="overlayPermHint">Карточка появится поверх других окон</div>
+                    </div>
+                    <button type="button" class="btn btn-secondary permission-row__btn" id="overlayPermBtn">Разрешить</button>
+                </div>
+                <div class="permission-row">
+                    <div>
+                        <div class="permission-row__title">Уведомления</div>
+                        <div class="permission-row__hint" id="notifyPermHint">Шторка, даже если приложение свёрнуто</div>
+                    </div>
+                    <button type="button" class="btn btn-secondary permission-row__btn" id="notifyPermBtn">Разрешить</button>
+                </div>
+                <div class="permission-row">
+                    <div>
+                        <div class="permission-row__title">Фон и точные будильники</div>
+                        <div class="permission-row__hint" id="batteryPermHint">Чтобы напоминание не пропало после сворачивания</div>
+                    </div>
+                    <button type="button" class="btn btn-secondary permission-row__btn" id="batteryPermBtn">Разрешить</button>
+                </div>
+            </div>
+        </section>
+        <section class="settings-section">
             <div class="settings-section__label">Звук будильника</div>
             <p class="settings-section__hint">Короткие сигналы или своя музыка. Файл будет зациклен на будильнике.</p>
             <div class="sound-list" id="soundList"></div>

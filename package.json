@@ -1,9 +1,10 @@
 {
   "name": "pillsnative",
   "productName": "Pills Native",
-  "version": "2.3.1",
+  "version": "3.0.0",
   "main": "main.js",
   "scripts": {
+    "dev": "electron-forge start",
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
@@ -15,6 +16,7 @@
     "dist:publish": "electron-builder --publish always",
     "mobile:prepare": "node scripts/prepare-mobile.js",
     "mobile:sync": "npm run mobile:prepare && npx cap sync android && node scripts/patch-android-manifest.js",
+    "dist:android": "node scripts/build-android.js",
     "ci:version": "node scripts/ci-version.js"
   },
   "author": "Goblin_Thug",
@@ -25,6 +27,7 @@
     "url": "https://github.com/GoblinThug/pillsnative.git"
   },
   "dependencies": {
+    "@pillsnative/alarm-overlay": "file:plugins/alarm-overlay",
     "electron-squirrel-startup": "^1.0.1",
     "electron-updater": "^6.8.9",
     "node-schedule": "^2.1.1"

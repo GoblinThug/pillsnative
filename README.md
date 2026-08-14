@@ -38,14 +38,14 @@
 |---|---|
 | 💊 | Список приёмов с поиском |
 | ⏰ | Разовые и ежедневные напоминания |
-| 🔔 | Окно будильника поверх других окон + системный toast |
+| 🔔 | Окно поверх всех приложений, системное уведомление или оба сразу |
 | 🔊 | Готовые мягкие сигналы и загрузка своей музыки |
 | 📝 | Подсказки по уже использованным препаратам и дозировкам |
-| 🎨 | Тёмная / светлая тема |
-| 📥 | Трей: свернуть в фон и не потерять расписание |
-| 📱 | Сборка для Android (Capacitor) |
+| 🎨 | Тёмная / светлая тема в стиле CustomSSH |
+| 📥 | Трей на десктопе и фон на Android |
+| 📱 | Сборка для Android (Capacitor) с оверлеем поверх других окон |
 
-Текущая версия в репозитории: **`2.0.1`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
+Текущая версия в репозитории: **`3.0.0`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
 
 ---
 
@@ -145,10 +145,12 @@ sudo dpkg -i PillsNative-*-x64.deb
 
 ### 🔔 Будильник
 
-- Отдельное окно подтверждения поверх остальных
-- Звук до закрытия окна
+- Окно подтверждения поверх остальных приложений
+- Системное уведомление в шторке
+- В настройках можно включить **только окно**, **только уведомление** или **оба способа**
+- На Android окно рисуется поверх других приложений (`поверх всех окон`), приложение остаётся в фоне
+- Звук до закрытия окна / подтверждения
 - Отложить на 5 минут
-- Системное уведомление (toast)
 
 ### 🔊 Звуки
 
@@ -159,6 +161,7 @@ sudo dpkg -i PillsNative-*-x64.deb
 ### ⚙️ Настройки
 
 - Тема: тёмная / светлая
+- Способ напоминания: окно поверх всех, уведомление или оба
 - Выбор звука будильника
 - Управление своими загруженными треками
 
@@ -204,7 +207,7 @@ Portable обновляется только вручную с [Releases](https:
 | На Mac «повреждено» | ПКМ → Открыть или `xattr -cr` для `.app` |
 | SmartScreen (Win) | Подробнее → Выполнить в любом случае |
 | Android не ставит APK | Разрешите установку из неизвестных источников |
-| Нет уведомлений (Android) | Разрешите уведомления и точные будильники; в настройках батареи отключите ограничения для PillsNative / разрешите автозапуск. Не «останавливайте» приложение принудительно — закрытие крестиком сворачивает в фон |
+| Нет уведомлений (Android) | В настройках приложения разрешите уведомления, точные будильники и **окно поверх других приложений**. В батарее отключите ограничения / разрешите автозапуск. Не «останавливайте» приложение принудительно |
 | Пустой список после перезапуска (Android) | Обновите APK (данные пишутся в Preferences). Старые локальные данные могли теряться в WebView |
 | Вопросы и баги | [Issues](https://github.com/GoblinThug/pillsnative/issues) |
 
@@ -255,14 +258,14 @@ Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) соб
 |---|---|
 | 💊 | Dose list with search |
 | ⏰ | One-shot and daily reminders |
-| 🔔 | Alarm window + system toast |
+| 🔔 | Overlay over other apps, system notification, or both |
 | 🔊 | Soft built-in chimes and custom music upload |
 | 📝 | Suggestions for previously used drugs/dosages |
 | 🎨 | Dark / light theme |
 | 📥 | System tray background mode |
 | 📱 | Android build via Capacitor |
 
-Repo version: **`2.0.1`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
+Repo version: **`3.0.0`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
 
 ---
 
@@ -345,7 +348,7 @@ Data stays local in Documents (`pills.json`, `pills-settings.json`).
 | macOS “damaged” | Right-click → Open / `xattr -cr` |
 | Windows SmartScreen | More info → Run anyway |
 | Android install blocked | Allow unknown sources |
-| No notifications (Android) | Allow notifications + exact alarms; disable battery restrictions / enable autostart for PillsNative. Closing with × minimizes — don’t force-stop the app |
+| No notifications (Android) | Allow notifications, exact alarms, **display over other apps**, and disable battery restrictions. Don’t force-stop the app |
 | Empty list after restart (Android) | Update the APK (data is stored in Preferences). Older builds could lose WebView localStorage |
 | Bugs | [Issues](https://github.com/GoblinThug/pillsnative/issues) |
 

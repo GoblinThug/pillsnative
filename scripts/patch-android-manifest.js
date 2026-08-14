@@ -21,6 +21,10 @@ const permissions = [
     'android.permission.VIBRATE',
     'android.permission.WAKE_LOCK',
     'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+    'android.permission.SYSTEM_ALERT_WINDOW',
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+    'android.permission.USE_FULL_SCREEN_INTENT',
 ];
 
 let changed = false;

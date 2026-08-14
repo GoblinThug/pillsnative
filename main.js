@@ -48,11 +48,18 @@ const SOUND_OPTIONS = [
     { id: 'soft-breeze', name: 'Лёгкий бриз', file: 'soft-breeze.wav' },
 ];
 
+const ALERT_MODES = new Set(['overlay', 'notification', 'both']);
+
 const DEFAULT_SETTINGS = {
     theme: 'dark',
     soundId: 'soft-marimba',
     customSounds: [],
+    alertMode: 'both',
 };
+
+function normalizeAlertMode(value) {
+    return ALERT_MODES.has(value) ? value : DEFAULT_SETTINGS.alertMode;
+}
 
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.webm']);
 
@@ -99,7 +106,12 @@ function readSettings() {
             ? parsed.soundId
             : DEFAULT_SETTINGS.soundId;
         const theme = parsed.theme === 'light' ? 'light' : 'dark';
-        return { theme, soundId, customSounds };
+        return {
+            theme,
+            soundId,
+            customSounds,
+            alertMode: normalizeAlertMode(parsed.alertMode),
+        };
     } catch {
         return { ...DEFAULT_SETTINGS, customSounds: [] };
     }
@@ -113,6 +125,7 @@ function writeSettings(next) {
             ? next.soundId
             : DEFAULT_SETTINGS.soundId,
         customSounds,
+        alertMode: normalizeAlertMode(next.alertMode),
     };
     fs.writeFileSync(settingsFilePath(), JSON.stringify(settings, null, 2));
     return settings;
@@ -159,6 +172,8 @@ function getPublicSettings() {
     return {
         theme: settings.theme,
         soundId: settings.soundId,
+        alertMode: settings.alertMode,
+        platform: 'electron',
         sounds: [...builtinSounds, ...customSounds],
     };
 }
@@ -331,11 +346,27 @@ function showAlarmWindow(payload) {
     });
 }
 
+const TEST_ALARM_ID = 'test-alarm';
+const TEST_SNOOZE_SECONDS = 10;
+const DEFAULT_SNOOZE_MINUTES = 5;
+
+function isTestAlarm(pill) {
+    return String(pill?.id) === TEST_ALARM_ID;
+}
+
+function snoozeOptions(pill) {
+    if (isTestAlarm(pill)) {
+        return { seconds: TEST_SNOOZE_SECONDS, label: 'Отложить 10 сек' };
+    }
+    return { minutes: DEFAULT_SNOOZE_MINUTES, label: 'Отложить 5 мин' };
+}
+
 function triggerAlarm(pill, { snoozed = false } = {}) {
     const title = snoozed
         ? `Отложенное напоминание: ${pill.drugName}`
         : `Пора принять: ${pill.drugName}`;
     const body = `Дозировка: ${pill.dosage || '—'}`;
+    const snooze = snoozeOptions(pill);
     const payload = {
         id: pill.id,
         drugName: pill.drugName,
@@ -343,12 +374,25 @@ function triggerAlarm(pill, { snoozed = false } = {}) {
         time: pill.time,
         description: pill.description || '',
         snoozed,
+        snoozeSeconds: snooze.seconds || null,
+        snoozeMinutes: snooze.minutes || null,
+        snoozeLabel: snooze.label,
     };
 
-    // Separate confirmation window — do not open the main app.
-    showAlarmWindow(payload);
+    const settings = readSettings();
+    const alertMode = normalizeAlertMode(settings.alertMode);
+    const showOverlay = alertMode === 'overlay' || alertMode === 'both';
+    const showNotification = alertMode === 'notification' || alertMode === 'both';
 
-    if (!Notification.isSupported()) return;
+    if (showOverlay) {
+        showAlarmWindow(payload);
+    } else if (alarmWindow && !alarmWindow.isDestroyed()) {
+        stopAlarmInRenderer();
+        alarmWindow.close();
+        alarmWindow = null;
+    }
+
+    if (!showNotification || !Notification.isSupported()) return;
 
     dismissActiveNotification();
 
@@ -361,7 +405,7 @@ function triggerAlarm(pill, { snoozed = false } = {}) {
         timeoutType: 'never',
         actions: [
             { type: 'button', text: 'Выпил таблетку' },
-            { type: 'button', text: 'Отложить 5 мин' },
+            { type: 'button', text: snooze.label },
         ],
         closeButtonText: 'Закрыть',
     });
@@ -370,7 +414,7 @@ function triggerAlarm(pill, { snoozed = false } = {}) {
 
     notification.on('action', (_event, index) => {
         if (index === 1) {
-            scheduleSnooze(pill, 5);
+            scheduleSnooze(pill, snooze);
         }
         closeAlarmWindow();
     });
@@ -424,8 +468,13 @@ function rescheduleAll(pills = readPills()) {
     pills.forEach((pill) => scheduleNotification(pill));
 }
 
-function scheduleSnooze(pill, minutes = 5) {
-    const when = new Date(Date.now() + minutes * 60 * 1000);
+function scheduleSnooze(pill, opts = {}) {
+    const seconds = Number(opts.seconds);
+    const minutes = Number(opts.minutes);
+    const delayMs = Number.isFinite(seconds) && seconds > 0
+        ? seconds * 1000
+        : (Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_SNOOZE_MINUTES) * 60 * 1000;
+    const when = new Date(Date.now() + delayMs);
     const snoozeKey = `snooze:${pill.id}:${when.getTime()}`;
     const job = schedule.scheduleJob(when, () => {
         triggerAlarm(pill, { snoozed: true });
@@ -612,7 +661,11 @@ ipcMain.handle('alarm:snooze', (_event, payload) => {
     const pills = readPills();
     const pill = pills.find((item) => String(item.id) === String(payload?.id)) || payload;
     if (!pill?.id) return null;
-    return scheduleSnooze(pill, payload?.minutes || 5);
+    const defaults = snoozeOptions(pill);
+    return scheduleSnooze(pill, {
+        seconds: payload?.seconds ?? defaults.seconds,
+        minutes: payload?.minutes ?? defaults.minutes,
+    });
 });
 
 ipcMain.handle('alarm:dismiss', () => {
@@ -622,12 +675,29 @@ ipcMain.handle('alarm:dismiss', () => {
 
 ipcMain.handle('settings:get', () => getPublicSettings());
 
+ipcMain.handle('settings:alertStatus', () => ({
+    platform: 'electron',
+    overlay: true,
+    notifications: Notification.isSupported(),
+    exactAlarms: true,
+    background: true,
+}));
+
+ipcMain.handle('settings:requestAlertPermission', () => ({
+    platform: 'electron',
+    overlay: true,
+    notifications: Notification.isSupported(),
+    exactAlarms: true,
+    background: true,
+}));
+
 ipcMain.handle('settings:set', (_event, patch = {}) => {
     const current = readSettings();
     writeSettings({
         theme: patch.theme ?? current.theme,
         soundId: patch.soundId ?? current.soundId,
         customSounds: patch.customSounds ?? current.customSounds,
+        alertMode: patch.alertMode ?? current.alertMode,
     });
     const publicSettings = getPublicSettings();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -710,7 +780,7 @@ ipcMain.handle('settings:removeCustomSound', (_event, soundId) => {
 
 function buildTestPill() {
     return {
-        id: 'test-alarm',
+        id: TEST_ALARM_ID,
         drugName: 'Тестовый препарат',
         dosage: '1 таблетка',
         time: new Date().toTimeString().slice(0, 5),

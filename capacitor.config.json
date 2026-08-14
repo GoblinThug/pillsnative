@@ -13,6 +13,13 @@
       "iconColor": "#0A84FF",
       "sound": "default"
     },
-    "Preferences": {}
-  }
+    "Preferences": {},
+    "AlarmOverlay": {}
+  },
+  "includePlugins": [
+    "@capacitor/app",
+    "@capacitor/local-notifications",
+    "@capacitor/preferences",
+    "@pillsnative/alarm-overlay"
+  ]
 }

@@ -704,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsPreviewAudio = document.getElementById('settingsPreviewAudio');
 
     let toastTimer = null;
-    let currentSettings = { theme: 'dark', soundId: 'soft-marimba', sounds: [] };
+    let currentSettings = { theme: 'dark', soundId: 'soft-marimba', alertMode: 'both', sounds: [] };
     let isDevBuild = false;
 
     async function initDevFeatures() {
@@ -739,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsPanel.classList.add('is-open');
         settingsBackdrop.classList.add('is-open');
         settingsPanel.setAttribute('aria-hidden', 'false');
+        void refreshAlertStatus();
     }
 
     function closeSettings() {
@@ -753,6 +754,65 @@ document.addEventListener('DOMContentLoaded', () => {
         themeOptions.querySelectorAll('.settings-option').forEach((button) => {
             button.classList.toggle('is-active', button.dataset.theme === currentSettings.theme);
         });
+    }
+
+    const alertModeOptions = document.getElementById('alertModeOptions');
+    const permissionList = document.getElementById('permissionList');
+    const overlayPermHint = document.getElementById('overlayPermHint');
+    const overlayPermBtn = document.getElementById('overlayPermBtn');
+    const notifyPermHint = document.getElementById('notifyPermHint');
+    const notifyPermBtn = document.getElementById('notifyPermBtn');
+    const batteryPermHint = document.getElementById('batteryPermHint');
+    const batteryPermBtn = document.getElementById('batteryPermBtn');
+
+    function renderAlertModeOptions() {
+        if (!alertModeOptions) return;
+        const mode = currentSettings.alertMode || 'both';
+        alertModeOptions.querySelectorAll('.settings-option').forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.alertMode === mode);
+        });
+    }
+
+    function setPermissionRow(button, hint, ok, okText, needText) {
+        const row = button?.closest('.permission-row');
+        if (!row || !hint) return;
+        row.classList.toggle('is-ok', Boolean(ok));
+        hint.textContent = ok ? okText : needText;
+    }
+
+    async function refreshAlertStatus() {
+        if (!permissionList || typeof window.electronAPI?.getAlertStatus !== 'function') return;
+        let status = { platform: 'electron', overlay: true, notifications: true, exactAlarms: true, background: true };
+        try {
+            status = await window.electronAPI.getAlertStatus() || status;
+        } catch {
+            // Desktop stubs still work without this API.
+        }
+        const isMobile = status.platform === 'android' || document.documentElement.classList.contains('is-mobile');
+        permissionList.hidden = !isMobile;
+        if (!isMobile) return;
+
+        setPermissionRow(
+            overlayPermBtn,
+            overlayPermHint,
+            status.overlay,
+            'Разрешено — карточка может появиться поверх других окон',
+            'Нужно разрешение, иначе окно поверх приложений не откроется',
+        );
+        setPermissionRow(
+            notifyPermBtn,
+            notifyPermHint,
+            status.notifications,
+            'Разрешено — уведомления придут в шторку',
+            'Разрешите уведомления, чтобы не пропустить приём',
+        );
+        setPermissionRow(
+            batteryPermBtn,
+            batteryPermHint,
+            Boolean(status.exactAlarms && status.background),
+            'Фон и точные будильники разрешены',
+            'Отключите ограничения батареи и разрешите точные будильники',
+        );
     }
 
     function renderSoundList() {
@@ -812,7 +872,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentSettings = settings;
         applyTheme(settings.theme);
         renderThemeOptions();
+        renderAlertModeOptions();
         renderSoundList();
+        void refreshAlertStatus();
     }
 
     themeOptions.querySelectorAll('.settings-option').forEach((button) => {
@@ -820,6 +882,35 @@ document.addEventListener('DOMContentLoaded', () => {
             currentSettings = await window.electronAPI.setSettings({ theme: button.dataset.theme });
             applySettings(currentSettings);
         });
+    });
+
+    alertModeOptions?.querySelectorAll('.settings-option').forEach((button) => {
+        button.addEventListener('click', async () => {
+            currentSettings = await window.electronAPI.setSettings({ alertMode: button.dataset.alertMode });
+            applySettings(currentSettings);
+            const labels = {
+                overlay: 'Только окно поверх всех',
+                notification: 'Только уведомление',
+                both: 'Окно и уведомление',
+            };
+            showToast(labels[button.dataset.alertMode] || 'Способ напоминания сохранён');
+        });
+    });
+
+    async function requestAlertPermission(kind) {
+        if (typeof window.electronAPI?.requestAlertPermission !== 'function') return;
+        await window.electronAPI.requestAlertPermission(kind);
+        setTimeout(() => {
+            void refreshAlertStatus();
+        }, 400);
+    }
+
+    overlayPermBtn?.addEventListener('click', () => requestAlertPermission('overlay'));
+    notifyPermBtn?.addEventListener('click', () => requestAlertPermission('notifications'));
+    batteryPermBtn?.addEventListener('click', () => requestAlertPermission('background'));
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void refreshAlertStatus();
     });
 
     openSettingsButton.addEventListener('click', openSettings);

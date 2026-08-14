@@ -44,6 +44,9 @@ document.addEventListener('DOMContentLoaded', () => {
         alarmMeta.textContent = payload.dosage || 'Без дозировки';
         alarmTime.textContent = payload.time || '--:--';
         alarmDesc.textContent = payload.description || 'Подтвердите приём, когда выпьете препарат.';
+        if (alarmSnooze) {
+            alarmSnooze.textContent = payload.snoozeLabel || 'Отложить 5 мин';
+        }
         await startAlarmSound(payload.soundSrc);
     }
 
@@ -72,7 +75,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 dosage: payload.dosage,
                 time: payload.time,
                 description: payload.description,
-                minutes: 5,
+                seconds: payload.snoozeSeconds,
+                minutes: payload.snoozeMinutes,
             });
         });
     });

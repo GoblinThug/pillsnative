@@ -194,6 +194,13 @@ jobs:
       - name: Patch Android notification permissions
         run: node scripts/patch-android-manifest.js
 
+      - name: Verify overlay plugin is linked
+        run: |
+          if ! grep -R "alarm-overlay" android --include='*.gradle'; then
+            echo "Alarm overlay plugin was not linked into the Android project"
+            exit 1
+          fi
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 

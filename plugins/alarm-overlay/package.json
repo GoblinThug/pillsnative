@@ -1,0 +1,15 @@
+{
+  "name": "@pillsnative/alarm-overlay",
+  "version": "1.0.0",
+  "description": "Native overlay, exact alarms and background keep-alive for PillsNative",
+  "main": "index.js",
+  "files": [
+    "android/",
+    "index.js"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}
