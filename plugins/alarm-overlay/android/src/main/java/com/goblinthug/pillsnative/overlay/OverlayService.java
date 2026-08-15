@@ -338,8 +338,8 @@ public class OverlayService extends Service {
                         handleAction(AlarmScheduler.ACTION_DISMISS);
                         return true;
                     }
-                    if (!swiping && event.getActionMasked() == MotionEvent.ACTION_UP) {
-                        View target = findClickableChild(card, event.getX(), event.getY());
+                    if (!swiping && event.getActionMasked() == MotionEvent.ACTION_UP && card instanceof ViewGroup) {
+                        View target = findClickableChild((ViewGroup) card, event.getX(), event.getY());
                         if (target != null) {
                             target.performClick();
                         }
