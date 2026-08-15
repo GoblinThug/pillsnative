@@ -14,7 +14,6 @@ import android.provider.Settings;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
-import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 
 import org.json.JSONArray;
@@ -64,7 +63,7 @@ final class AppUpdater {
         }
     }
 
-    static void check(Plugin plugin, PluginCall call) {
+    static void check(AlarmOverlayPlugin plugin, PluginCall call) {
         EXECUTOR.execute(() -> {
             try {
                 String current = currentVersion(plugin.getContext());
@@ -96,7 +95,7 @@ final class AppUpdater {
         });
     }
 
-    static void download(Plugin plugin, PluginCall call) {
+    static void download(AlarmOverlayPlugin plugin, PluginCall call) {
         String url = call.getString("url");
         if (url == null || url.isEmpty()) {
             call.reject("Missing APK download url");
@@ -166,7 +165,7 @@ final class AppUpdater {
         });
     }
 
-    static void install(Plugin plugin, PluginCall call) {
+    static void install(AlarmOverlayPlugin plugin, PluginCall call) {
         Context context = plugin.getContext();
         File apk = new File(context.getCacheDir(), "pillsnative-update.apk");
         if (!apk.exists()) {
@@ -334,8 +333,8 @@ final class AppUpdater {
         }
     }
 
-    private static void emit(Plugin plugin, JSObject status) {
-        MAIN.post(() -> plugin.notifyListeners("updateStatus", status));
+    private static void emit(AlarmOverlayPlugin plugin, JSObject status) {
+        MAIN.post(() -> plugin.emitUpdateStatus(status));
     }
 
     private static void resolve(PluginCall call, JSObject value) {

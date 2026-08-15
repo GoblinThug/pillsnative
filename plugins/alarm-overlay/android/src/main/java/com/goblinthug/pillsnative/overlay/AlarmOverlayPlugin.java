@@ -23,6 +23,10 @@ import org.json.JSONObject;
 
 @CapacitorPlugin(name = "AlarmOverlay")
 public class AlarmOverlayPlugin extends Plugin {
+    void emitUpdateStatus(JSObject status) {
+        notifyListeners("updateStatus", status);
+    }
+
     @PluginMethod
     public void scheduleAll(PluginCall call) {
         try {
