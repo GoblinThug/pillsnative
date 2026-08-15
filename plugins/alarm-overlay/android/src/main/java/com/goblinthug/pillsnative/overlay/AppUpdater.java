@@ -199,11 +199,23 @@ final class AppUpdater {
             );
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(uri, "application/vnd.android.package-archive");
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            );
+            intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true);
+            intent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
             context.startActivity(intent);
             call.resolve(status("installing", currentVersion(context), null, apk.getName()));
         } catch (Exception error) {
-            call.reject("Failed to start APK installer", error);
+            JSObject out = status("error", currentVersion(context), null, null);
+            out.put("code", "generic");
+            out.put(
+                "message",
+                "Не удалось открыть установщик. Если пишет «приложение не установлено» — удалите старую сборку один раз (другая подпись), затем ставьте эту. Дальше обновления будут вставать поверх."
+            );
+            call.resolve(out);
         }
     }
 

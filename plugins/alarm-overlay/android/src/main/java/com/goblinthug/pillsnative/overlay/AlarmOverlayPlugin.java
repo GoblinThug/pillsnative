@@ -144,6 +144,32 @@ public class AlarmOverlayPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void saveBackup(PluginCall call) {
+        try {
+            String json = call.getString("json", "{}");
+            DataBackup.save(getContext(), json);
+            JSObject out = new JSObject();
+            out.put("ok", true);
+            call.resolve(out);
+        } catch (Exception error) {
+            call.reject("Failed to save backup", error);
+        }
+    }
+
+    @PluginMethod
+    public void loadBackup(PluginCall call) {
+        try {
+            String json = DataBackup.load(getContext());
+            JSObject out = new JSObject();
+            out.put("json", json);
+            out.put("found", json != null && !json.isEmpty());
+            call.resolve(out);
+        } catch (Exception error) {
+            call.reject("Failed to load backup", error);
+        }
+    }
+
+    @PluginMethod
     public void requestPermission(PluginCall call) {
         String kind = call.getString("kind", "overlay");
         try {

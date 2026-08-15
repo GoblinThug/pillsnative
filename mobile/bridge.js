@@ -144,6 +144,7 @@
         } catch {
             // ignore
         }
+        await persistExternalBackup();
     }
 
     async function readSettings() {
@@ -180,7 +181,54 @@
         } catch {
             // ignore
         }
+        await persistExternalBackup();
         return memorySettings;
+    }
+
+    async function persistExternalBackup() {
+        const Overlay = getOverlay();
+        if (!Overlay?.saveBackup) return;
+        try {
+            const pills = memoryPills || (await readPills());
+            const settings = memorySettings || (await readSettings());
+            await Overlay.saveBackup({
+                json: JSON.stringify({
+                    version: 1,
+                    savedAt: Date.now(),
+                    pills,
+                    settings,
+                }),
+            });
+        } catch (error) {
+            console.warn('[storage] backup', error);
+        }
+    }
+
+    async function restoreExternalBackupIfNeeded() {
+        const Overlay = getOverlay();
+        if (!Overlay?.loadBackup) return;
+        try {
+            const pills = await readPills();
+            if (pills.length > 0) {
+                await persistExternalBackup();
+                return;
+            }
+            const result = await Overlay.loadBackup();
+            if (!result?.found || !result.json) return;
+            const parsed = JSON.parse(result.json);
+            if (Array.isArray(parsed?.pills) && parsed.pills.length) {
+                await writePills(parsed.pills);
+            }
+            if (parsed?.settings && typeof parsed.settings === 'object') {
+                await writeSettings({
+                    theme: parsed.settings.theme,
+                    soundId: parsed.settings.soundId,
+                    alertMode: parsed.settings.alertMode,
+                });
+            }
+        } catch (error) {
+            console.warn('[storage] restore', error);
+        }
     }
 
     async function publicSettings() {
@@ -506,6 +554,7 @@
 
         void (async () => {
             await ensureStorageReady();
+            await restoreExternalBackupIfNeeded();
             await startBackground();
             const pills = await readPills();
             emit(listeners.pills, pills);

@@ -39,6 +39,23 @@ for (const permission of permissions) {
     changed = true;
 }
 
+const storagePerm =
+    '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n' +
+    '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n';
+if (!xml.includes('WRITE_EXTERNAL_STORAGE')) {
+    xml = xml.replace('<application', `${storagePerm}    <application`);
+    changed = true;
+}
+
+if (!/android:allowBackup="true"/.test(xml)) {
+    if (/android:allowBackup="false"/.test(xml)) {
+        xml = xml.replace('android:allowBackup="false"', 'android:allowBackup="true"');
+    } else {
+        xml = xml.replace('<application', '<application\n        android:allowBackup="true"');
+    }
+    changed = true;
+}
+
 if (changed) {
     fs.writeFileSync(manifestPath, xml);
     console.log('Patched AndroidManifest.xml with notification permissions');

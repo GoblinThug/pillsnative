@@ -205,6 +205,9 @@ jobs:
       - name: Sync Android launcher icons
         run: node scripts/sync-android-icons.js
 
+      - name: Configure stable APK signing
+        run: node scripts/configure-android-signing.js
+
       - name: Verify overlay plugin is linked
         run: |
           if ! grep -R "alarm-overlay" android --include='*.gradle'; then
