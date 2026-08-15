@@ -1,0 +1,31 @@
+/**
+ * Init script: prefer Google's Maven Central mirror (GitHub Actions often gets 403 from repo.maven.apache.org).
+ * Usage: ./gradlew assembleDebug --init-script ../scripts/gradle-maven-mirrors.init.gradle
+ */
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.maven {
+        url 'https://maven-central.storage-download.googleapis.com/maven2/'
+    }
+    try {
+        settings.dependencyResolutionManagement.repositories.maven {
+            url 'https://maven-central.storage-download.googleapis.com/maven2/'
+        }
+    } catch (Throwable ignored) {
+        // Older Capacitor templates may not use dependencyResolutionManagement.
+    }
+}
+
+allprojects {
+    buildscript {
+        repositories {
+            maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
+            google()
+            mavenCentral()
+        }
+    }
+    repositories {
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
+        google()
+        mavenCentral()
+    }
+}

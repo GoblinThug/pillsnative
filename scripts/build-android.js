@@ -36,12 +36,14 @@ npx(['node', 'scripts/patch-android-manifest.js']);
 npx(['node', 'scripts/sync-android-version.js']);
 npx(['node', 'scripts/sync-android-icons.js']);
 npx(['node', 'scripts/configure-android-signing.js']);
+npx(['node', 'scripts/patch-android-repositories.js']);
 
 const gradlew = path.join(androidDir, isWin ? 'gradlew.bat' : 'gradlew');
 if (!isWin && fs.existsSync(gradlew)) {
     try { fs.chmodSync(gradlew, 0o755); } catch { /* ignore */ }
 }
-run(gradlew, ['assembleDebug', '--no-daemon'], androidDir);
+const initScript = path.join(root, 'scripts', 'gradle-maven-mirrors.init.gradle');
+run(gradlew, ['assembleDebug', '--no-daemon', `--init-script=${initScript}`], androidDir);
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
 const src = path.join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
