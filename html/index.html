@@ -238,24 +238,24 @@
         </section>
         <section class="settings-section">
             <div class="settings-section__label">Способ напоминания</div>
-            <p class="settings-section__hint">Окно поверх всех приложений, уведомление в шторке — или оба сразу.</p>
+            <p class="settings-section__hint">Окно с подтверждением поверх приложений, обычное уведомление в шторке — или оба сразу. Звук окна следует за звуком телефона: в беззвучном режиме окна тихие.</p>
             <div class="settings-options settings-options--stack" id="alertModeOptions">
-                <button type="button" class="settings-option" data-alert-mode="overlay">Окно поверх всех</button>
+                <button type="button" class="settings-option" data-alert-mode="overlay">Окно с подтверждением</button>
                 <button type="button" class="settings-option" data-alert-mode="notification">Уведомление</button>
                 <button type="button" class="settings-option" data-alert-mode="both">Оба способа</button>
             </div>
             <div class="permission-list" id="permissionList" hidden>
                 <div class="permission-row">
                     <div>
-                        <div class="permission-row__title">Окно поверх приложений</div>
-                        <div class="permission-row__hint" id="overlayPermHint">Карточка появится поверх других окон</div>
+                        <div class="permission-row__title">Окно с подтверждением</div>
+                        <div class="permission-row__hint" id="overlayPermHint">Карточка поверх других окон, с кнопками «Выпил» / «Отложить»</div>
                     </div>
                     <button type="button" class="btn btn-secondary permission-row__btn" id="overlayPermBtn">Разрешить</button>
                 </div>
                 <div class="permission-row">
                     <div>
                         <div class="permission-row__title">Уведомления</div>
-                        <div class="permission-row__hint" id="notifyPermHint">Шторка, даже если приложение свёрнуто</div>
+                        <div class="permission-row__hint" id="notifyPermHint">Обычное уведомление в шторке телефона</div>
                     </div>
                     <button type="button" class="btn btn-secondary permission-row__btn" id="notifyPermBtn">Разрешить</button>
                 </div>
@@ -277,8 +277,18 @@
         </section>
         <section class="settings-section">
             <div class="settings-section__label">Звук будильника</div>
-            <p class="settings-section__hint">Короткие сигналы или своя музыка. Файл будет зациклен на будильнике.</p>
-            <div class="sound-list" id="soundList"></div>
+            <p class="settings-section__hint">Выберите сигнал и прослушайте. Своя музыка на будильнике зацикливается.</p>
+            <div class="sound-picker" id="soundPicker">
+                <button type="button" class="sound-picker__trigger" id="soundTrigger" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="sound-picker__value" id="soundDisplay">—</span>
+                    <span class="sound-picker__chevron" aria-hidden="true">▾</span>
+                </button>
+                <div class="sound-picker__menu" id="soundMenu" role="listbox" hidden></div>
+            </div>
+            <div class="sound-picker__actions">
+                <button type="button" class="btn btn-secondary" id="soundPreviewBtn">Слушать</button>
+                <button type="button" class="btn btn-secondary" id="soundRemoveBtn" hidden>Удалить свой</button>
+            </div>
             <button type="button" class="btn btn-secondary settings-upload" id="addCustomSound">Загрузить свою музыку</button>
         </section>
         <section class="settings-section">

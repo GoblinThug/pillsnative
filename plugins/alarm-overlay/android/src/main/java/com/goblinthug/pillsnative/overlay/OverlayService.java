@@ -14,6 +14,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -28,6 +29,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -40,6 +42,7 @@ import org.json.JSONObject;
 
 public class OverlayService extends Service {
     public static final String CHANNEL_ALARM = "pills-alarms-lock";
+    public static final String CHANNEL_NOTIFY = "pills-notify-normal";
     public static final String CHANNEL_ENGINE = "pills-overlay-engine";
     private static final int ENGINE_NOTIFICATION_ID = 1102;
 
@@ -51,8 +54,6 @@ public class OverlayService extends Service {
     private boolean activeSnoozed;
     private float touchStartX;
     private float touchStartY;
-    private int overlayStartX;
-    private int overlayStartY;
     private boolean swiping;
 
     public static void start(Context context, String pillIds, boolean snoozed) {
@@ -100,11 +101,17 @@ public class OverlayService extends Service {
         }
 
         boolean showOverlayNow = wantsOverlay && canOverlay && !lockedOrOff;
-        boolean useFullScreenIntent = lockedOrOff || !showOverlayNow;
+        boolean useFullScreenIntent = lockedOrOff || (wantsOverlay && !showOverlayNow);
+        // Confirmation window owns sound (and follows phone ringer). Notification-only uses system tray sound.
+        boolean overlayOwnsSound = wantsOverlay;
+        boolean notificationWithSound = wantsNotification && !overlayOwnsSound;
         int alarmId = AlarmStore.requestCode("group-" + activePillIds, snoozed);
 
-        if (wantsNotification || lockedOrOff || useFullScreenIntent) {
-            startForeground(alarmId, buildAlarmNotification(pills, snoozed, useFullScreenIntent));
+        if (wantsNotification || lockedOrOff || useFullScreenIntent || !showOverlayNow) {
+            startForeground(
+                alarmId,
+                buildAlarmNotification(pills, snoozed, useFullScreenIntent, notificationWithSound, wantsOverlay)
+            );
         } else {
             startForeground(ENGINE_NOTIFICATION_ID, engineNotification(
                 snoozed ? "Отложенное напоминание" : "Пора принять лекарство",
@@ -112,17 +119,39 @@ public class OverlayService extends Service {
             ));
         }
 
-        if (lockedOrOff) {
+        if (lockedOrOff && wantsOverlay) {
             launchFullScreenActivity(activePillIds, snoozed);
         } else if (showOverlayNow) {
             showOverlay(pills, snoozed);
         }
 
-        if (showOverlayNow || lockedOrOff || !wantsNotification) {
+        if (wantsOverlay && (showOverlayNow || lockedOrOff) && isPhoneSoundOn()) {
             playSound(AlarmStore.getSettings(this).optString("soundId", "soft-marimba"));
         }
-        vibrate();
+        if (wantsOverlay && !isPhoneSilent()) {
+            vibrate();
+        }
         return START_STICKY;
+    }
+
+    private boolean isPhoneSoundOn() {
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) return true;
+            return am.getRingerMode() == AudioManager.RINGER_MODE_NORMAL;
+        } catch (Exception error) {
+            return true;
+        }
+    }
+
+    private boolean isPhoneSilent() {
+        try {
+            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) return false;
+            return am.getRingerMode() == AudioManager.RINGER_MODE_SILENT;
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private boolean isLockedOrScreenOff() {
@@ -251,10 +280,7 @@ public class OverlayService extends Service {
         card.addView(title, titleLp);
         card.addView(meta, metaLp);
         card.addView(actions, actionsLp);
-        enableSwipeToDismiss(hint);
-        enableSwipeToDismiss(eyebrow);
-        enableSwipeToDismiss(title);
-        enableSwipeToDismiss(meta);
+        enableSwipeToDismiss(card);
 
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int width = Math.min(dp(360), Math.max(dp(280), screenWidth - dp(32)));
@@ -282,33 +308,25 @@ public class OverlayService extends Service {
         }
     }
 
-    private void enableSwipeToDismiss(View handle) {
-        handle.setOnTouchListener((v, event) -> {
-            if (overlayParams == null || windowManager == null || overlayView == null) return false;
-            View card = overlayView;
+    private void enableSwipeToDismiss(View card) {
+        card.setOnTouchListener((v, event) -> {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     touchStartX = event.getRawX();
                     touchStartY = event.getRawY();
-                    overlayStartX = overlayParams.x;
-                    overlayStartY = overlayParams.y;
                     swiping = false;
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - touchStartX;
                     float dy = event.getRawY() - touchStartY;
-                    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) swiping = true;
-                    if (!swiping) return true;
-                    overlayParams.x = overlayStartX + Math.round(dx);
-                    overlayParams.y = overlayStartY + Math.round(dy);
-                    float distance = (float) Math.hypot(dx, dy);
-                    float alpha = Math.max(0.35f, 1f - distance / dp(220));
-                    card.setAlpha(alpha);
-                    try {
-                        windowManager.updateViewLayout(card, overlayParams);
-                    } catch (Exception ignored) {
-                        // ignore
+                    if (!swiping && (Math.abs(dx) > dp(8) || Math.abs(dy) > dp(8))) {
+                        swiping = true;
                     }
+                    if (!swiping) return true;
+                    card.setTranslationX(dx);
+                    card.setTranslationY(dy);
+                    float distance = (float) Math.hypot(dx, dy);
+                    card.setAlpha(Math.max(0.35f, 1f - distance / dp(220)));
                     return true;
                 }
                 case MotionEvent.ACTION_UP:
@@ -316,24 +334,48 @@ public class OverlayService extends Service {
                     float dx = event.getRawX() - touchStartX;
                     float dy = event.getRawY() - touchStartY;
                     float distance = (float) Math.hypot(dx, dy);
-                    if (distance > dp(96)) {
+                    if (swiping && distance > dp(90)) {
                         handleAction(AlarmScheduler.ACTION_DISMISS);
-                    } else {
-                        overlayParams.x = 0;
-                        overlayParams.y = 0;
-                        card.setAlpha(1f);
-                        try {
-                            windowManager.updateViewLayout(card, overlayParams);
-                        } catch (Exception ignored) {
-                            // ignore
+                        return true;
+                    }
+                    if (!swiping && event.getActionMasked() == MotionEvent.ACTION_UP) {
+                        View target = findClickableChild(card, event.getX(), event.getY());
+                        if (target != null) {
+                            target.performClick();
                         }
                     }
+                    card.animate()
+                        .translationX(0f)
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(160)
+                        .start();
+                    swiping = false;
                     return true;
                 }
                 default:
                     return false;
             }
         });
+    }
+
+    private View findClickableChild(ViewGroup parent, float x, float y) {
+        for (int i = parent.getChildCount() - 1; i >= 0; i -= 1) {
+            View child = parent.getChildAt(i);
+            if (x < child.getLeft() || x > child.getRight() || y < child.getTop() || y > child.getBottom()) {
+                continue;
+            }
+            float localX = x - child.getLeft();
+            float localY = y - child.getTop();
+            if (child instanceof ViewGroup) {
+                View nested = findClickableChild((ViewGroup) child, localX, localY);
+                if (nested != null) return nested;
+            }
+            if (child instanceof Button || child.isClickable()) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private Button makeButton(String label, int background, int color) {
@@ -349,27 +391,39 @@ public class OverlayService extends Service {
         return button;
     }
 
-    private Notification buildAlarmNotification(JSONArray pills, boolean snoozed, boolean fullScreen) {
+    private Notification buildAlarmNotification(
+        JSONArray pills,
+        boolean snoozed,
+        boolean fullScreen,
+        boolean withSound,
+        boolean confirmationWindow
+    ) {
         String title = snoozed
             ? "Отложенное напоминание"
             : (pills.length() > 1 ? "Пора принять лекарства (" + pills.length() + ")" : "Пора принять лекарство");
         String body = groupBody(pills);
         int id = AlarmStore.requestCode("group-" + activePillIds, snoozed);
+        String channel = withSound ? CHANNEL_NOTIFY : CHANNEL_ALARM;
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ALARM)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channel)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(withSound ? NotificationCompat.PRIORITY_DEFAULT : NotificationCompat.PRIORITY_MAX)
+            .setCategory(confirmationWindow ? NotificationCompat.CATEGORY_ALARM : NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .addAction(0, "Отложить 5 мин", actionPending(AlarmScheduler.ACTION_SNOOZE, id + 3))
             .addAction(0, pills.length() > 1 ? "Выпил все" : "Выпил таблетку", actionPending(AlarmScheduler.ACTION_TAKEN, id + 4));
+
+        if (withSound) {
+            builder.setDefaults(NotificationCompat.DEFAULT_ALL);
+        } else {
+            builder.setSilent(true);
+        }
 
         Intent contentLaunch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -381,7 +435,7 @@ public class OverlayService extends Service {
             builder.setContentIntent(PendingIntent.getActivity(this, id + 5, contentLaunch, flags));
         }
 
-        if (fullScreen) {
+        if (fullScreen && confirmationWindow) {
             Intent full = new Intent(this, AlarmFullScreenActivity.class);
             full.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
@@ -427,8 +481,8 @@ public class OverlayService extends Service {
             afd.close();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 mediaPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build());
             }
             mediaPlayer.setLooping(true);
@@ -523,6 +577,27 @@ public class OverlayService extends Service {
                 alarm.setSound(sound, null);
             }
             manager.createNotificationChannel(alarm);
+        }
+        if (manager.getNotificationChannel(CHANNEL_NOTIFY) == null) {
+            NotificationChannel notify = new NotificationChannel(
+                CHANNEL_NOTIFY,
+                "Обычные уведомления",
+                NotificationManager.IMPORTANCE_DEFAULT
+            );
+            notify.setDescription("Обычное уведомление в шторке телефона");
+            notify.enableVibration(true);
+            notify.setShowBadge(true);
+            notify.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                notify.setSound(sound, new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build());
+            } else {
+                notify.setSound(sound, null);
+            }
+            manager.createNotificationChannel(notify);
         }
         if (manager.getNotificationChannel(CHANNEL_ENGINE) == null) {
             NotificationChannel engine = new NotificationChannel(

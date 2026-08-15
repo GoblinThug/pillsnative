@@ -49,6 +49,19 @@ public class AlarmOverlayPlugin extends Plugin {
         call.resolve(statusObject());
     }
 
+    /** Send the app to the background without killing the process (alarms stay scheduled). */
+    @PluginMethod
+    public void minimizeApp(PluginCall call) {
+        try {
+            if (getActivity() != null) {
+                getActivity().moveTaskToBack(true);
+            }
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Failed to minimize app", error);
+        }
+    }
+
     @PluginMethod
     public void runFirstLaunchSetup(PluginCall call) {
         if (AlarmStore.isOnboardingDone(getContext())) {

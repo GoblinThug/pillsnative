@@ -30,6 +30,7 @@ public class AlarmFullScreenActivity extends Activity {
     private float touchStartY;
     private float cardStartTranslationX;
     private float cardStartTranslationY;
+    private boolean swiping;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -169,10 +170,7 @@ public class AlarmFullScreenActivity extends Activity {
         card.addView(title, titleLp);
         card.addView(meta, metaLp);
         card.addView(actions, actionsLp);
-        enableSwipeToDismiss(hint);
-        enableSwipeToDismiss(eyebrow);
-        enableSwipeToDismiss(title);
-        enableSwipeToDismiss(meta);
+        enableSwipeToDismiss(card);
 
         FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -183,20 +181,28 @@ public class AlarmFullScreenActivity extends Activity {
         return root;
     }
 
-    private void enableSwipeToDismiss(View handle) {
-        handle.setOnTouchListener((v, event) -> {
-            if (cardView == null) return false;
-            View card = cardView;
+    @Override
+    public void onBackPressed() {
+        sendAction(AlarmScheduler.ACTION_DISMISS);
+    }
+
+    private void enableSwipeToDismiss(View card) {
+        card.setOnTouchListener((v, event) -> {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     touchStartX = event.getRawX();
                     touchStartY = event.getRawY();
                     cardStartTranslationX = card.getTranslationX();
                     cardStartTranslationY = card.getTranslationY();
+                    swiping = false;
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - touchStartX;
                     float dy = event.getRawY() - touchStartY;
+                    if (!swiping && (Math.abs(dx) > dp(8) || Math.abs(dy) > dp(8))) {
+                        swiping = true;
+                    }
+                    if (!swiping) return true;
                     card.setTranslationX(cardStartTranslationX + dx);
                     card.setTranslationY(cardStartTranslationY + dy);
                     float distance = (float) Math.hypot(dx, dy);
@@ -207,19 +213,47 @@ public class AlarmFullScreenActivity extends Activity {
                 case MotionEvent.ACTION_CANCEL: {
                     float dx = event.getRawX() - touchStartX;
                     float dy = event.getRawY() - touchStartY;
-                    if (Math.hypot(dx, dy) > dp(100)) {
+                    float distance = (float) Math.hypot(dx, dy);
+                    if (swiping && distance > dp(90)) {
                         sendAction(AlarmScheduler.ACTION_DISMISS);
-                    } else {
-                        card.setTranslationX(0);
-                        card.setTranslationY(0);
-                        card.setAlpha(1f);
+                        return true;
                     }
+                    if (!swiping && event.getActionMasked() == MotionEvent.ACTION_UP) {
+                        View target = findClickableChild((ViewGroup) card, event.getX(), event.getY());
+                        if (target != null) target.performClick();
+                    }
+                    card.animate()
+                        .translationX(0f)
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(160)
+                        .start();
+                    swiping = false;
                     return true;
                 }
                 default:
                     return false;
             }
         });
+    }
+
+    private View findClickableChild(ViewGroup parent, float x, float y) {
+        for (int i = parent.getChildCount() - 1; i >= 0; i -= 1) {
+            View child = parent.getChildAt(i);
+            if (x < child.getLeft() || x > child.getRight() || y < child.getTop() || y > child.getBottom()) {
+                continue;
+            }
+            float localX = x - child.getLeft();
+            float localY = y - child.getTop();
+            if (child instanceof ViewGroup) {
+                View nested = findClickableChild((ViewGroup) child, localX, localY);
+                if (nested != null) return nested;
+            }
+            if (child instanceof Button || child.isClickable()) {
+                return child;
+            }
+        }
+        return null;
     }
 
     private Button makeButton(String label, int background, int color) {

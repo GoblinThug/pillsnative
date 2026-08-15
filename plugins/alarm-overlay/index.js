@@ -9,6 +9,7 @@ try {
     AlarmOverlay = {
         scheduleAll: async () => ({}),
         startBackground: async () => ({}),
+        minimizeApp: async () => {},
         getStatus: async () => ({
             platform: 'web',
             overlay: false,

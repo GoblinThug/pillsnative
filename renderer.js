@@ -211,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hourList.appendChild(button);
         }
 
-        for (let minute = 0; minute < 60; minute += 5) {
+        for (let minute = 0; minute < 60; minute += 1) {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'time-picker__option';
@@ -325,11 +325,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (timeInput.value && /^\d{2}:\d{2}$/.test(timeInput.value)) {
                 const [h, m] = timeInput.value.split(':').map(Number);
                 draftHour = h;
-                draftMinute = Math.round(m / 5) * 5 % 60;
+                draftMinute = m;
             } else {
                 const now = new Date();
                 draftHour = now.getHours();
-                draftMinute = Math.round(now.getMinutes() / 5) * 5 % 60;
+                draftMinute = now.getMinutes();
             }
             renderTimeLists();
             await placeFloatingMenu(timeTrigger, timePopover, {
@@ -700,12 +700,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsBackdrop = document.getElementById('settingsBackdrop');
     const settingsPanel = document.getElementById('settingsPanel');
     const themeOptions = document.getElementById('themeOptions');
-    const soundList = document.getElementById('soundList');
+    const soundPicker = document.getElementById('soundPicker');
+    const soundTrigger = document.getElementById('soundTrigger');
+    const soundDisplay = document.getElementById('soundDisplay');
+    const soundMenu = document.getElementById('soundMenu');
+    const soundPreviewBtn = document.getElementById('soundPreviewBtn');
+    const soundRemoveBtn = document.getElementById('soundRemoveBtn');
     const settingsPreviewAudio = document.getElementById('settingsPreviewAudio');
 
     let toastTimer = null;
     let currentSettings = { theme: 'dark', soundId: 'soft-marimba', alertMode: 'both', sounds: [] };
     let isDevBuild = false;
+    let soundPreviewing = false;
 
     async function initDevFeatures() {
         try {
@@ -746,8 +752,37 @@ document.addEventListener('DOMContentLoaded', () => {
         settingsPanel.classList.remove('is-open');
         settingsBackdrop.classList.remove('is-open');
         settingsPanel.setAttribute('aria-hidden', 'true');
+        closeSoundPicker();
+        stopSoundPreview();
+    }
+
+    function stopSoundPreview() {
         settingsPreviewAudio.pause();
         settingsPreviewAudio.currentTime = 0;
+        soundPreviewing = false;
+        if (soundPreviewBtn) soundPreviewBtn.textContent = 'Слушать';
+    }
+
+    function getSelectedSound() {
+        const sounds = currentSettings.sounds || [];
+        return sounds.find((item) => item.id === currentSettings.soundId) || sounds[0] || null;
+    }
+
+    function closeSoundPicker() {
+        if (!soundPicker) return;
+        soundPicker.classList.remove('is-open');
+        if (soundMenu) soundMenu.hidden = true;
+        if (soundTrigger) soundTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function openSoundPicker() {
+        if (!soundPicker || !soundMenu || !soundTrigger) return;
+        const open = !soundPicker.classList.contains('is-open');
+        closeSoundPicker();
+        if (!open) return;
+        soundPicker.classList.add('is-open');
+        soundMenu.hidden = false;
+        soundTrigger.setAttribute('aria-expanded', 'true');
     }
 
     function renderThemeOptions() {
@@ -798,14 +833,14 @@ document.addEventListener('DOMContentLoaded', () => {
             overlayPermBtn,
             overlayPermHint,
             status.overlay,
-            'Разрешено — карточка может появиться поверх других окон',
-            'Нужно разрешение, иначе окно поверх приложений не откроется',
+            'Разрешено — окно с подтверждением может открыться поверх приложений',
+            'Нужно разрешение, иначе окно с подтверждением не откроется',
         );
         setPermissionRow(
             notifyPermBtn,
             notifyPermHint,
             status.notifications,
-            'Разрешено — уведомления придут в шторку',
+            'Разрешено — обычные уведомления придут в шторку',
             'Разрешите уведомления, чтобы не пропустить приём',
         );
         setPermissionRow(
@@ -824,56 +859,42 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
-    function renderSoundList() {
-        soundList.innerHTML = '';
-        (currentSettings.sounds || []).forEach((sound) => {
-            const row = document.createElement('div');
-            row.className = `sound-item${sound.custom ? ' sound-item--custom' : ''}${sound.id === currentSettings.soundId ? ' is-active' : ''}`;
+    function renderSoundPicker() {
+        if (!soundDisplay || !soundMenu) return;
+        const selected = getSelectedSound();
+        soundDisplay.textContent = selected
+            ? (selected.custom ? `${selected.name} (своя)` : selected.name)
+            : 'Выберите звук';
 
-            const selectBtn = document.createElement('button');
-            selectBtn.type = 'button';
-            selectBtn.className = 'sound-item__name';
-            selectBtn.textContent = sound.custom ? `${sound.name} (своя)` : sound.name;
-            selectBtn.addEventListener('click', async () => {
+        if (soundRemoveBtn) {
+            soundRemoveBtn.hidden = !selected?.custom;
+        }
+
+        soundMenu.innerHTML = '';
+        (currentSettings.sounds || []).forEach((sound) => {
+            const option = document.createElement('button');
+            option.type = 'button';
+            option.className = `sound-picker__option${sound.id === currentSettings.soundId ? ' is-active' : ''}`;
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', sound.id === currentSettings.soundId ? 'true' : 'false');
+
+            const name = document.createElement('span');
+            name.className = 'sound-picker__option-name';
+            name.textContent = sound.custom ? `${sound.name} (своя)` : sound.name;
+
+            const mark = document.createElement('span');
+            mark.className = 'sound-picker__option-mark';
+            mark.textContent = '✓';
+
+            option.append(name, mark);
+            option.addEventListener('click', async () => {
+                stopSoundPreview();
                 currentSettings = await window.electronAPI.setSettings({ soundId: sound.id });
-                renderSoundList();
+                renderSoundPicker();
+                closeSoundPicker();
                 showToast(`Звук: ${sound.name}`);
             });
-
-            const previewBtn = document.createElement('button');
-            previewBtn.type = 'button';
-            previewBtn.className = 'sound-item__preview';
-            previewBtn.textContent = 'Слушать';
-            previewBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                try {
-                    settingsPreviewAudio.src = sound.src;
-                    settingsPreviewAudio.volume = 0.28;
-                    settingsPreviewAudio.currentTime = 0;
-                    await settingsPreviewAudio.play();
-                } catch {
-                    showToast('Не удалось воспроизвести звук');
-                }
-            });
-
-            row.append(selectBtn, previewBtn);
-
-            if (sound.custom) {
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'sound-item__remove';
-                removeBtn.textContent = 'Удалить';
-                removeBtn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    settingsPreviewAudio.pause();
-                    currentSettings = await window.electronAPI.removeCustomSound(sound.id);
-                    applySettings(currentSettings);
-                    showToast('Свой звук удалён');
-                });
-                row.appendChild(removeBtn);
-            }
-
-            soundList.appendChild(row);
+            soundMenu.appendChild(option);
         });
     }
 
@@ -882,7 +903,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyTheme(settings.theme);
         renderThemeOptions();
         renderAlertModeOptions();
-        renderSoundList();
+        renderSoundPicker();
         void refreshAlertStatus();
     }
 
@@ -898,7 +919,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentSettings = await window.electronAPI.setSettings({ alertMode: button.dataset.alertMode });
             applySettings(currentSettings);
             const labels = {
-                overlay: 'Только окно поверх всех',
+                overlay: 'Только окно с подтверждением',
                 notification: 'Только уведомление',
                 both: 'Окно и уведомление',
             };
@@ -927,9 +948,52 @@ document.addEventListener('DOMContentLoaded', () => {
     closeSettingsButton.addEventListener('click', closeSettings);
     settingsBackdrop.addEventListener('click', closeSettings);
 
+    soundTrigger?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openSoundPicker();
+    });
+
+    soundPreviewBtn?.addEventListener('click', async () => {
+        const selected = getSelectedSound();
+        if (!selected) return;
+        if (soundPreviewing) {
+            stopSoundPreview();
+            return;
+        }
+        try {
+            settingsPreviewAudio.src = selected.src;
+            settingsPreviewAudio.volume = 0.28;
+            settingsPreviewAudio.currentTime = 0;
+            await settingsPreviewAudio.play();
+            soundPreviewing = true;
+            soundPreviewBtn.textContent = 'Стоп';
+        } catch {
+            stopSoundPreview();
+            showToast('Не удалось воспроизвести звук');
+        }
+    });
+
+    settingsPreviewAudio?.addEventListener('ended', () => {
+        stopSoundPreview();
+    });
+
+    soundRemoveBtn?.addEventListener('click', async () => {
+        const selected = getSelectedSound();
+        if (!selected?.custom) return;
+        stopSoundPreview();
+        currentSettings = await window.electronAPI.removeCustomSound(selected.id);
+        applySettings(currentSettings);
+        showToast('Свой звук удалён');
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!soundPicker?.contains(event.target)) closeSoundPicker();
+    });
+
     const addCustomSoundButton = document.getElementById('addCustomSound');
     addCustomSoundButton.addEventListener('click', async () => {
-        settingsPreviewAudio.pause();
+        stopSoundPreview();
+        closeSoundPicker();
         const result = await window.electronAPI.addCustomSound();
         if (result?.error) {
             showToast(result.error);
@@ -1231,6 +1295,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     void initDevFeatures();
     void window.electronAPI.getSettings().then(applySettings);
+
+    if (typeof window.electronAPI.onHardwareBack === 'function') {
+        window.electronAPI.onHardwareBack(() => {
+            if (soundPicker?.classList.contains('is-open')) {
+                closeSoundPicker();
+                return true;
+            }
+            if (settingsPanel?.classList.contains('is-open')) {
+                closeSettings();
+                return true;
+            }
+            if (datePicker.classList.contains('is-open') || timePicker.classList.contains('is-open')) {
+                closePickers();
+                return true;
+            }
+            if (testAlarmMenu && !testAlarmMenu.hidden) {
+                closeTestMenu();
+                return true;
+            }
+            if (!listView.classList.contains('is-active')) {
+                clearForm();
+                showList();
+                return true;
+            }
+            return false;
+        });
+    }
 
     renderCalendar();
     renderTimeLists();

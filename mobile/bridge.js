@@ -18,6 +18,7 @@
         alarmStop: [],
         windowState: [],
         popoverReset: [],
+        hardwareBack: null,
     };
 
     const SOUND_OPTIONS = [
@@ -362,6 +363,28 @@
         await nativeSchedule();
     }
 
+    async function minimizeToBackground() {
+        const App = getApp();
+        try {
+            if (App?.minimizeApp) {
+                await App.minimizeApp();
+                return true;
+            }
+        } catch {
+            // fall through to native helper
+        }
+        const Overlay = getOverlay();
+        try {
+            if (Overlay?.minimizeApp) {
+                await Overlay.minimizeApp();
+                return true;
+            }
+        } catch {
+            // ignore
+        }
+        return false;
+    }
+
     function bindAppListeners() {
         const App = getApp();
         if (!App?.addListener || bindAppListeners.done) return;
@@ -378,6 +401,22 @@
                 emit(listeners.pills, pills);
                 await rescheduleAll();
             })();
+        });
+
+        // Capacitor default: if WebView has no history, back does nothing.
+        App.addListener('backButton', async ({ canGoBack }) => {
+            if (typeof listeners.hardwareBack === 'function') {
+                try {
+                    if (listeners.hardwareBack()) return;
+                } catch {
+                    // ignore UI handler errors
+                }
+            }
+            if (canGoBack) {
+                window.history.back();
+                return;
+            }
+            await minimizeToBackground();
         });
     }
 
@@ -425,16 +464,16 @@
         onGetPillsResponse: (cb) => listeners.pills.push(cb),
         onSaveResponse: (cb) => listeners.save.push(cb),
         onDeletePillResponse: (cb) => listeners.deleted.push(cb),
-        windowMinimize: async () => false,
+        windowMinimize: async () => minimizeToBackground(),
         windowMaximizeToggle: async () => false,
         windowClose: async () => {
             // Never exitApp(): process kill cancels reliable delivery UX and
             // looks like "app doesn't stay in background". Minimize instead.
-            const App = getApp();
-            if (App?.minimizeApp) {
-                await App.minimizeApp();
-            }
+            await minimizeToBackground();
             return true;
+        },
+        onHardwareBack: (cb) => {
+            listeners.hardwareBack = typeof cb === 'function' ? cb : null;
         },
         expandWindowForRect: async () => ({ padLeft: 0, padTop: 0, expanded: false }),
         restorePopoverBounds: async () => true,
