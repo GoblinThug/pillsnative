@@ -36,7 +36,6 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
-            android:showOnLockScreen="true"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
@@ -50,13 +49,13 @@
             </intent-filter>
         </receiver>
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="com.goblinthug.pillsnative.overlay.AlarmOverlayFileProvider"
             android:authorities="${applicationId}.alarmoverlay.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+                android:resource="@xml/alarm_overlay_file_paths" />
         </provider>
     </application>
 </manifest>
