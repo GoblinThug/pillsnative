@@ -73,6 +73,27 @@ public final class AlarmStore {
         return null;
     }
 
+    public static JSONArray findPills(Context context, String pillIds) {
+        JSONArray out = new JSONArray();
+        if (pillIds == null || pillIds.trim().isEmpty()) return out;
+        String[] parts = pillIds.split(",");
+        for (String part : parts) {
+            String id = part.trim();
+            if (id.isEmpty()) continue;
+            JSONObject pill = findPill(context, id);
+            if (pill != null) out.put(pill);
+        }
+        return out;
+    }
+
+    public static boolean isOnboardingDone(Context context) {
+        return prefs(context).getBoolean("onboarding_done", false);
+    }
+
+    public static void setOnboardingDone(Context context, boolean done) {
+        prefs(context).edit().putBoolean("onboarding_done", done).apply();
+    }
+
     public static void saveScheduledIds(Context context, JSONArray ids) {
         prefs(context).edit().putString(KEY_IDS, ids == null ? "[]" : ids.toString()).apply();
     }

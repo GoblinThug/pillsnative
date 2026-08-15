@@ -7,6 +7,7 @@
     const PILLS_KEY = 'pillsnative.pills';
     const SETTINGS_KEY = 'pillsnative.settings';
     const MIGRATED_KEY = 'pillsnative.migrated-v1';
+    const ONBOARDING_KEY = 'pillsnative.onboarding-v1';
 
     const listeners = {
         pills: [],
@@ -286,6 +287,20 @@
         }
     }
 
+    async function maybeFirstLaunchPermissions() {
+        const done = await prefGet(ONBOARDING_KEY);
+        if (done === '1') return;
+        const Overlay = getOverlay();
+        if (Overlay?.runFirstLaunchSetup) {
+            try {
+                await Overlay.runFirstLaunchSetup();
+            } catch (error) {
+                console.warn('[alarms] firstLaunch', error);
+            }
+        }
+        await prefSet(ONBOARDING_KEY, '1');
+    }
+
     async function getAlertStatus() {
         const Overlay = getOverlay();
         if (!Overlay?.getStatus) {
@@ -555,6 +570,7 @@
         void (async () => {
             await ensureStorageReady();
             await restoreExternalBackupIfNeeded();
+            await maybeFirstLaunchPermissions();
             await startBackground();
             const pills = await readPills();
             emit(listeners.pills, pills);

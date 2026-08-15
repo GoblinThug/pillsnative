@@ -34,8 +34,6 @@ public class AlarmOverlayPlugin extends Plugin {
             JSObject settings = call.getObject("settings");
             AlarmStore.savePills(getContext(), pills == null ? new JSONArray() : new JSONArray(pills.toString()));
             AlarmStore.saveSettings(getContext(), settings == null ? new JSONObject() : new JSONObject(settings.toString()));
-            requestNotificationsIfNeeded();
-            requestFullScreenIfNeeded();
             AlarmScheduler.scheduleAll(getContext());
             KeepAliveService.start(getContext());
             call.resolve(statusObject());
@@ -46,11 +44,25 @@ public class AlarmOverlayPlugin extends Plugin {
 
     @PluginMethod
     public void startBackground(PluginCall call) {
-        requestNotificationsIfNeeded();
-        requestOverlayIfNeeded();
-        requestFullScreenIfNeeded();
         KeepAliveService.start(getContext());
         AlarmScheduler.scheduleAll(getContext());
+        call.resolve(statusObject());
+    }
+
+    @PluginMethod
+    public void runFirstLaunchSetup(PluginCall call) {
+        if (AlarmStore.isOnboardingDone(getContext())) {
+            call.resolve(statusObject());
+            return;
+        }
+        // Ask for every required permission once, in sequence.
+        requestNotificationsIfNeeded();
+        android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        handler.postDelayed(this::requestOverlayIfNeeded, 700);
+        handler.postDelayed(this::requestFullScreenIfNeeded, 1600);
+        handler.postDelayed(this::openBackgroundSettings, 2600);
+        handler.postDelayed(() -> AppUpdater.requestInstallPermission(getActivity(), getContext()), 3600);
+        AlarmStore.setOnboardingDone(getContext(), true);
         call.resolve(statusObject());
     }
 

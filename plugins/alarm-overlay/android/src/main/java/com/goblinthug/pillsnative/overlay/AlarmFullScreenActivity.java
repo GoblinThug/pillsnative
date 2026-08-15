@@ -10,6 +10,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -17,30 +19,35 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
-/**
- * Shown via full-screen intent when the device is locked / screen is off.
- * This is more reliable on the lock screen than TYPE_APPLICATION_OVERLAY alone.
- */
 public class AlarmFullScreenActivity extends Activity {
-    private String pillId;
+    private String pillIds;
     private boolean snoozed;
+    private View cardView;
+    private float touchStartX;
+    private float touchStartY;
+    private float cardStartTranslationX;
+    private float cardStartTranslationY;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         showOverLockScreen();
 
-        pillId = getIntent() != null ? getIntent().getStringExtra(AlarmScheduler.EXTRA_PILL_ID) : null;
+        pillIds = getIntent() != null ? getIntent().getStringExtra(AlarmScheduler.EXTRA_PILL_IDS) : null;
+        if (pillIds == null || pillIds.isEmpty()) {
+            pillIds = getIntent() != null ? getIntent().getStringExtra(AlarmScheduler.EXTRA_PILL_ID) : null;
+        }
         snoozed = getIntent() != null && getIntent().getBooleanExtra(AlarmScheduler.EXTRA_SNOOZED, false);
-        JSONObject pill = AlarmStore.findPill(this, pillId);
-        if (pill == null) {
+        JSONArray pills = AlarmStore.findPills(this, pillIds);
+        if (pills.length() == 0) {
             finish();
             return;
         }
 
-        setContentView(buildUi(pill, snoozed));
+        setContentView(buildUi(pills, snoozed));
     }
 
     private void showOverLockScreen() {
@@ -65,7 +72,7 @@ public class AlarmFullScreenActivity extends Activity {
         }
     }
 
-    private FrameLayout buildUi(JSONObject pill, boolean snoozed) {
+    private FrameLayout buildUi(JSONArray pills, boolean snoozed) {
         boolean light = "light".equals(AlarmStore.getSettings(this).optString("theme", "dark"));
         int pageBg = light ? Color.parseColor("#E8ECF2") : Color.parseColor("#0B0B0F");
         int bg = light ? Color.parseColor("#F8F9FB") : Color.parseColor("#121216");
@@ -79,6 +86,7 @@ public class AlarmFullScreenActivity extends Activity {
         root.setPadding(dp(20), dp(20), dp(20), dp(20));
 
         LinearLayout card = new LinearLayout(this);
+        cardView = card;
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(18), dp(18), dp(18));
         GradientDrawable cardBg = new GradientDrawable();
@@ -88,15 +96,28 @@ public class AlarmFullScreenActivity extends Activity {
         card.setBackground(cardBg);
         card.setElevation(dp(12));
 
+        TextView hint = new TextView(this);
+        hint.setText("Свайпни, чтобы закрыть");
+        hint.setTextColor(muted);
+        hint.setGravity(Gravity.CENTER_HORIZONTAL);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+
         TextView eyebrow = new TextView(this);
-        eyebrow.setText(snoozed ? "ОТЛОЖЕНО" : "ПОРА ПРИНЯТЬ");
+        eyebrow.setText(snoozed ? "ОТЛОЖЕНО" : (pills.length() > 1 ? "ПОРА ПРИНЯТЬ (" + pills.length() + ")" : "ПОРА ПРИНЯТЬ"));
         eyebrow.setTextColor(accent);
         eyebrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.06f);
+        LinearLayout.LayoutParams eyebrowLp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        eyebrowLp.topMargin = dp(10);
 
         TextView title = new TextView(this);
-        title.setText(pill.optString("drugName", "Лекарство"));
+        title.setText(pills.length() == 1
+            ? pills.optJSONObject(0).optString("drugName", "Лекарство")
+            : "Приём " + pills.length() + " препаратов");
         title.setTextColor(text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -107,29 +128,23 @@ public class AlarmFullScreenActivity extends Activity {
         titleLp.topMargin = dp(8);
 
         TextView meta = new TextView(this);
-        String dosage = pill.optString("dosage", "");
-        String time = pill.optString("time", "");
-        meta.setText((dosage.isEmpty() ? "Без дозировки" : dosage) + (time.isEmpty() ? "" : "  ·  " + time));
+        StringBuilder body = new StringBuilder();
+        for (int i = 0; i < pills.length(); i += 1) {
+            JSONObject pill = pills.optJSONObject(i);
+            if (pill == null) continue;
+            if (body.length() > 0) body.append('\n');
+            String name = pill.optString("drugName", "Лекарство");
+            String dosage = pill.optString("dosage", "");
+            body.append("• ").append(dosage.isEmpty() ? name : name + " — " + dosage);
+        }
+        meta.setText(body.toString());
         meta.setTextColor(muted);
         meta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         LinearLayout.LayoutParams metaLp = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        metaLp.topMargin = dp(6);
-
-        TextView desc = new TextView(this);
-        String description = pill.optString("description", "");
-        desc.setText(description.isEmpty()
-            ? "Подтвердите приём. Экран разблокирован для напоминания."
-            : description);
-        desc.setTextColor(muted);
-        desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        descLp.topMargin = dp(12);
+        metaLp.topMargin = dp(10);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -140,7 +155,7 @@ public class AlarmFullScreenActivity extends Activity {
         actionsLp.topMargin = dp(18);
 
         Button snoozeBtn = makeButton("Отложить 5 мин", light ? Color.parseColor("#E8ECF2") : Color.parseColor("#24242C"), text);
-        Button takenBtn = makeButton("Выпил таблетку", accent, Color.WHITE);
+        Button takenBtn = makeButton(pills.length() > 1 ? "Выпил все" : "Выпил таблетку", accent, Color.WHITE);
         LinearLayout.LayoutParams snoozeLp = new LinearLayout.LayoutParams(0, dp(46), 1f);
         LinearLayout.LayoutParams takenLp = new LinearLayout.LayoutParams(0, dp(46), 1.15f);
         takenLp.leftMargin = dp(8);
@@ -149,11 +164,15 @@ public class AlarmFullScreenActivity extends Activity {
         actions.addView(snoozeBtn, snoozeLp);
         actions.addView(takenBtn, takenLp);
 
-        card.addView(eyebrow);
+        card.addView(hint);
+        card.addView(eyebrow, eyebrowLp);
         card.addView(title, titleLp);
         card.addView(meta, metaLp);
-        card.addView(desc, descLp);
         card.addView(actions, actionsLp);
+        enableSwipeToDismiss(hint);
+        enableSwipeToDismiss(eyebrow);
+        enableSwipeToDismiss(title);
+        enableSwipeToDismiss(meta);
 
         FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -162,6 +181,45 @@ public class AlarmFullScreenActivity extends Activity {
         );
         root.addView(card, cardLp);
         return root;
+    }
+
+    private void enableSwipeToDismiss(View handle) {
+        handle.setOnTouchListener((v, event) -> {
+            if (cardView == null) return false;
+            View card = cardView;
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    touchStartX = event.getRawX();
+                    touchStartY = event.getRawY();
+                    cardStartTranslationX = card.getTranslationX();
+                    cardStartTranslationY = card.getTranslationY();
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = event.getRawX() - touchStartX;
+                    float dy = event.getRawY() - touchStartY;
+                    card.setTranslationX(cardStartTranslationX + dx);
+                    card.setTranslationY(cardStartTranslationY + dy);
+                    float distance = (float) Math.hypot(dx, dy);
+                    card.setAlpha(Math.max(0.35f, 1f - distance / dp(240)));
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL: {
+                    float dx = event.getRawX() - touchStartX;
+                    float dy = event.getRawY() - touchStartY;
+                    if (Math.hypot(dx, dy) > dp(100)) {
+                        sendAction(AlarmScheduler.ACTION_DISMISS);
+                    } else {
+                        card.setTranslationX(0);
+                        card.setTranslationY(0);
+                        card.setAlpha(1f);
+                    }
+                    return true;
+                }
+                default:
+                    return false;
+            }
+        });
     }
 
     private Button makeButton(String label, int background, int color) {
@@ -180,7 +238,8 @@ public class AlarmFullScreenActivity extends Activity {
     private void sendAction(String action) {
         Intent intent = new Intent(this, AlarmReceiver.class);
         intent.setAction(action);
-        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, pillId);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_IDS, pillIds);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, AlarmScheduler.firstId(pillIds));
         intent.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
         sendBroadcast(intent);
         finish();

@@ -10,13 +10,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Color;
-import android.media.RingtoneManager;
-import android.net.Uri;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -26,6 +26,7 @@ import android.os.VibratorManager;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -34,6 +35,7 @@ import android.widget.TextView;
 
 import androidx.core.app.NotificationCompat;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class OverlayService extends Service {
@@ -43,13 +45,20 @@ public class OverlayService extends Service {
 
     private WindowManager windowManager;
     private View overlayView;
+    private WindowManager.LayoutParams overlayParams;
     private MediaPlayer mediaPlayer;
-    private String activePillId;
+    private String activePillIds;
     private boolean activeSnoozed;
+    private float touchStartX;
+    private float touchStartY;
+    private int overlayStartX;
+    private int overlayStartY;
+    private boolean swiping;
 
-    public static void start(Context context, String pillId, boolean snoozed) {
+    public static void start(Context context, String pillIds, boolean snoozed) {
         Intent intent = new Intent(context, OverlayService.class);
-        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, pillId);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_IDS, pillIds);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, AlarmScheduler.firstId(pillIds));
         intent.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
         AlarmReceiver.startService(context, intent);
     }
@@ -66,16 +75,19 @@ public class OverlayService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         ensureChannels();
-        String pillId = intent != null ? intent.getStringExtra(AlarmScheduler.EXTRA_PILL_ID) : null;
+        String pillIds = intent != null ? intent.getStringExtra(AlarmScheduler.EXTRA_PILL_IDS) : null;
+        if (pillIds == null || pillIds.isEmpty()) {
+            pillIds = intent != null ? intent.getStringExtra(AlarmScheduler.EXTRA_PILL_ID) : null;
+        }
         boolean snoozed = intent != null && intent.getBooleanExtra(AlarmScheduler.EXTRA_SNOOZED, false);
-        JSONObject pill = AlarmStore.findPill(this, pillId);
-        if (pill == null) {
+        JSONArray pills = AlarmStore.findPills(this, pillIds);
+        if (pills.length() == 0) {
             startForeground(ENGINE_NOTIFICATION_ID, engineNotification("Напоминание", "Пора принять лекарство"));
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        activePillId = String.valueOf(pill.opt("id"));
+        activePillIds = pillIds;
         activeSnoozed = snoozed;
         String mode = AlarmStore.alertMode(this);
         boolean wantsOverlay = "overlay".equals(mode) || "both".equals(mode);
@@ -87,24 +99,23 @@ public class OverlayService extends Service {
             wantsNotification = true;
         }
 
-        // Lock-screen overlay is unreliable on many OEMs — use full-screen activity instead.
         boolean showOverlayNow = wantsOverlay && canOverlay && !lockedOrOff;
         boolean useFullScreenIntent = lockedOrOff || !showOverlayNow;
-        int alarmId = AlarmStore.requestCode(activePillId, snoozed);
+        int alarmId = AlarmStore.requestCode("group-" + activePillIds, snoozed);
 
         if (wantsNotification || lockedOrOff || useFullScreenIntent) {
-            startForeground(alarmId, buildAlarmNotification(pill, snoozed, useFullScreenIntent));
+            startForeground(alarmId, buildAlarmNotification(pills, snoozed, useFullScreenIntent));
         } else {
             startForeground(ENGINE_NOTIFICATION_ID, engineNotification(
                 snoozed ? "Отложенное напоминание" : "Пора принять лекарство",
-                pillLabel(pill)
+                groupBody(pills)
             ));
         }
 
         if (lockedOrOff) {
-            launchFullScreenActivity(activePillId, snoozed);
+            launchFullScreenActivity(activePillIds, snoozed);
         } else if (showOverlayNow) {
-            showOverlay(pill, snoozed);
+            showOverlay(pills, snoozed);
         }
 
         if (showOverlayNow || lockedOrOff || !wantsNotification) {
@@ -130,7 +141,7 @@ public class OverlayService extends Service {
         return false;
     }
 
-    private void launchFullScreenActivity(String pillId, boolean snoozed) {
+    private void launchFullScreenActivity(String pillIds, boolean snoozed) {
         try {
             Intent launch = new Intent(this, AlarmFullScreenActivity.class);
             launch.addFlags(
@@ -139,7 +150,8 @@ public class OverlayService extends Service {
                     | Intent.FLAG_ACTIVITY_SINGLE_TOP
                     | Intent.FLAG_ACTIVITY_NO_USER_ACTION
             );
-            launch.putExtra(AlarmScheduler.EXTRA_PILL_ID, pillId);
+            launch.putExtra(AlarmScheduler.EXTRA_PILL_IDS, pillIds);
+            launch.putExtra(AlarmScheduler.EXTRA_PILL_ID, AlarmScheduler.firstId(pillIds));
             launch.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
             startActivity(launch);
         } catch (Exception ignored) {
@@ -154,7 +166,7 @@ public class OverlayService extends Service {
         super.onDestroy();
     }
 
-    private void showOverlay(JSONObject pill, boolean snoozed) {
+    private void showOverlay(JSONArray pills, boolean snoozed) {
         removeOverlay();
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         if (windowManager == null) return;
@@ -177,15 +189,26 @@ public class OverlayService extends Service {
         card.setBackground(cardBg);
         card.setElevation(dp(18));
 
+        TextView hint = new TextView(this);
+        hint.setText("Свайпни, чтобы закрыть");
+        hint.setTextColor(muted);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        hint.setGravity(Gravity.CENTER_HORIZONTAL);
+
         TextView eyebrow = new TextView(this);
-        eyebrow.setText(snoozed ? "ОТЛОЖЕНО" : "ПОРА ПРИНЯТЬ");
+        eyebrow.setText(snoozed ? "ОТЛОЖЕНО" : (pills.length() > 1 ? "ПОРА ПРИНЯТЬ (" + pills.length() + ")" : "ПОРА ПРИНЯТЬ"));
         eyebrow.setTextColor(accent);
         eyebrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.06f);
+        LinearLayout.LayoutParams eyebrowLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        eyebrowLp.topMargin = dp(8);
 
         TextView title = new TextView(this);
-        title.setText(pill.optString("drugName", "Лекарство"));
+        title.setText(groupTitle(pills));
         title.setTextColor(text);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -196,9 +219,7 @@ public class OverlayService extends Service {
         titleLp.topMargin = dp(6);
 
         TextView meta = new TextView(this);
-        String dosage = pill.optString("dosage", "");
-        String time = pill.optString("time", "");
-        meta.setText((dosage.isEmpty() ? "Без дозировки" : dosage) + (time.isEmpty() ? "" : "  ·  " + time));
+        meta.setText(groupBody(pills));
         meta.setTextColor(muted);
         meta.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         LinearLayout.LayoutParams metaLp = new LinearLayout.LayoutParams(
@@ -206,17 +227,6 @@ public class OverlayService extends Service {
             LinearLayout.LayoutParams.WRAP_CONTENT
         );
         metaLp.topMargin = dp(4);
-
-        TextView desc = new TextView(this);
-        String description = pill.optString("description", "");
-        desc.setText(description.isEmpty() ? "Подтвердите приём, когда выпьете препарат." : description);
-        desc.setTextColor(muted);
-        desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
-        LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        descLp.topMargin = dp(10);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -227,7 +237,7 @@ public class OverlayService extends Service {
         actionsLp.topMargin = dp(14);
 
         Button snooze = makeButton("Отложить 5 мин", light ? Color.parseColor("#E8ECF2") : Color.parseColor("#24242C"), text);
-        Button taken = makeButton("Выпил таблетку", accent, Color.WHITE);
+        Button taken = makeButton(pills.length() > 1 ? "Выпил все" : "Выпил таблетку", accent, Color.WHITE);
         LinearLayout.LayoutParams snoozeLp = new LinearLayout.LayoutParams(0, dp(42), 1f);
         LinearLayout.LayoutParams takenLp = new LinearLayout.LayoutParams(0, dp(42), 1.15f);
         takenLp.leftMargin = dp(8);
@@ -236,15 +246,19 @@ public class OverlayService extends Service {
         actions.addView(snooze, snoozeLp);
         actions.addView(taken, takenLp);
 
-        card.addView(eyebrow);
+        card.addView(hint);
+        card.addView(eyebrow, eyebrowLp);
         card.addView(title, titleLp);
         card.addView(meta, metaLp);
-        card.addView(desc, descLp);
         card.addView(actions, actionsLp);
+        enableSwipeToDismiss(hint);
+        enableSwipeToDismiss(eyebrow);
+        enableSwipeToDismiss(title);
+        enableSwipeToDismiss(meta);
 
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int width = Math.min(dp(360), Math.max(dp(280), screenWidth - dp(32)));
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+        overlayParams = new WindowManager.LayoutParams(
             width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType(),
@@ -256,16 +270,70 @@ public class OverlayService extends Service {
                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         );
-        params.gravity = Gravity.CENTER;
-        params.x = 0;
-        params.y = 0;
+        overlayParams.gravity = Gravity.CENTER;
+        overlayParams.x = 0;
+        overlayParams.y = 0;
 
         try {
-            windowManager.addView(card, params);
+            windowManager.addView(card, overlayParams);
             overlayView = card;
         } catch (Exception error) {
             overlayView = null;
         }
+    }
+
+    private void enableSwipeToDismiss(View handle) {
+        handle.setOnTouchListener((v, event) -> {
+            if (overlayParams == null || windowManager == null || overlayView == null) return false;
+            View card = overlayView;
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    touchStartX = event.getRawX();
+                    touchStartY = event.getRawY();
+                    overlayStartX = overlayParams.x;
+                    overlayStartY = overlayParams.y;
+                    swiping = false;
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = event.getRawX() - touchStartX;
+                    float dy = event.getRawY() - touchStartY;
+                    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) swiping = true;
+                    if (!swiping) return true;
+                    overlayParams.x = overlayStartX + Math.round(dx);
+                    overlayParams.y = overlayStartY + Math.round(dy);
+                    float distance = (float) Math.hypot(dx, dy);
+                    float alpha = Math.max(0.35f, 1f - distance / dp(220));
+                    card.setAlpha(alpha);
+                    try {
+                        windowManager.updateViewLayout(card, overlayParams);
+                    } catch (Exception ignored) {
+                        // ignore
+                    }
+                    return true;
+                }
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL: {
+                    float dx = event.getRawX() - touchStartX;
+                    float dy = event.getRawY() - touchStartY;
+                    float distance = (float) Math.hypot(dx, dy);
+                    if (distance > dp(96)) {
+                        handleAction(AlarmScheduler.ACTION_DISMISS);
+                    } else {
+                        overlayParams.x = 0;
+                        overlayParams.y = 0;
+                        card.setAlpha(1f);
+                        try {
+                            windowManager.updateViewLayout(card, overlayParams);
+                        } catch (Exception ignored) {
+                            // ignore
+                        }
+                    }
+                    return true;
+                }
+                default:
+                    return false;
+            }
+        });
     }
 
     private Button makeButton(String label, int background, int color) {
@@ -281,10 +349,12 @@ public class OverlayService extends Service {
         return button;
     }
 
-    private Notification buildAlarmNotification(JSONObject pill, boolean snoozed, boolean fullScreen) {
-        String title = snoozed ? "Отложенное напоминание" : "Пора принять лекарство";
-        String body = pillLabel(pill);
-        int id = AlarmStore.requestCode(String.valueOf(pill.opt("id")), snoozed);
+    private Notification buildAlarmNotification(JSONArray pills, boolean snoozed, boolean fullScreen) {
+        String title = snoozed
+            ? "Отложенное напоминание"
+            : (pills.length() > 1 ? "Пора принять лекарства (" + pills.length() + ")" : "Пора принять лекарство");
+        String body = groupBody(pills);
+        int id = AlarmStore.requestCode("group-" + activePillIds, snoozed);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ALARM)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -298,8 +368,8 @@ public class OverlayService extends Service {
             .setAutoCancel(false)
             .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(0, "Отложить 5 мин", actionPending(AlarmScheduler.ACTION_SNOOZE, pill, snoozed, id + 3))
-            .addAction(0, "Выпил таблетку", actionPending(AlarmScheduler.ACTION_TAKEN, pill, snoozed, id + 4));
+            .addAction(0, "Отложить 5 мин", actionPending(AlarmScheduler.ACTION_SNOOZE, id + 3))
+            .addAction(0, pills.length() > 1 ? "Выпил все" : "Выпил таблетку", actionPending(AlarmScheduler.ACTION_TAKEN, id + 4));
 
         Intent contentLaunch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -307,7 +377,7 @@ public class OverlayService extends Service {
 
         if (contentLaunch != null) {
             contentLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            contentLaunch.putExtra(AlarmScheduler.EXTRA_PILL_ID, String.valueOf(pill.opt("id")));
+            contentLaunch.putExtra(AlarmScheduler.EXTRA_PILL_IDS, activePillIds);
             builder.setContentIntent(PendingIntent.getActivity(this, id + 5, contentLaunch, flags));
         }
 
@@ -319,7 +389,8 @@ public class OverlayService extends Service {
                     | Intent.FLAG_ACTIVITY_SINGLE_TOP
                     | Intent.FLAG_ACTIVITY_NO_USER_ACTION
             );
-            full.putExtra(AlarmScheduler.EXTRA_PILL_ID, String.valueOf(pill.opt("id")));
+            full.putExtra(AlarmScheduler.EXTRA_PILL_IDS, activePillIds);
+            full.putExtra(AlarmScheduler.EXTRA_PILL_ID, AlarmScheduler.firstId(activePillIds));
             full.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
             builder.setFullScreenIntent(PendingIntent.getActivity(this, id + 6, full, flags), true);
         }
@@ -327,19 +398,20 @@ public class OverlayService extends Service {
         return builder.build();
     }
 
-    private PendingIntent actionPending(String action, JSONObject pill, boolean snoozed, int requestCode) {
-        return AlarmScheduler.pending(this, action, String.valueOf(pill.opt("id")), snoozed, requestCode);
+    private PendingIntent actionPending(String action, int requestCode) {
+        return AlarmScheduler.pending(this, action, activePillIds, activeSnoozed, requestCode);
     }
 
     private void handleAction(String action) {
         Intent intent = new Intent(this, AlarmReceiver.class);
         intent.setAction(action);
-        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, activePillId);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_IDS, activePillIds);
+        intent.putExtra(AlarmScheduler.EXTRA_PILL_ID, AlarmScheduler.firstId(activePillIds));
         intent.putExtra(AlarmScheduler.EXTRA_SNOOZED, activeSnoozed);
         sendBroadcast(intent);
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null && activePillId != null) {
-            manager.cancel(AlarmStore.requestCode(activePillId, activeSnoozed));
+        if (manager != null && activePillIds != null) {
+            manager.cancel(AlarmStore.requestCode("group-" + activePillIds, activeSnoozed));
             manager.cancel(ENGINE_NOTIFICATION_ID);
         }
         stopSelf();
@@ -475,10 +547,24 @@ public class OverlayService extends Service {
             .build();
     }
 
-    private static String pillLabel(JSONObject pill) {
-        String name = pill.optString("drugName", "Лекарство");
-        String dosage = pill.optString("dosage", "");
-        return dosage.isEmpty() ? name : name + " — " + dosage;
+    private static String groupTitle(JSONArray pills) {
+        if (pills.length() == 1) {
+            return pills.optJSONObject(0).optString("drugName", "Лекарство");
+        }
+        return "Приём " + pills.length() + " препаратов";
+    }
+
+    private static String groupBody(JSONArray pills) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < pills.length(); i += 1) {
+            JSONObject pill = pills.optJSONObject(i);
+            if (pill == null) continue;
+            if (sb.length() > 0) sb.append('\n');
+            String name = pill.optString("drugName", "Лекарство");
+            String dosage = pill.optString("dosage", "");
+            sb.append("• ").append(dosage.isEmpty() ? name : name + " — " + dosage);
+        }
+        return sb.length() == 0 ? "Пора принять лекарство" : sb.toString();
     }
 
     private static String soundFile(String soundId) {

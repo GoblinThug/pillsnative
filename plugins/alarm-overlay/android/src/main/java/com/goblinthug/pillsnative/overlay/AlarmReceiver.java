@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.PowerManager;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class AlarmReceiver extends BroadcastReceiver {
@@ -21,28 +22,37 @@ public class AlarmReceiver extends BroadcastReceiver {
             return;
         }
 
-        String pillId = intent.getStringExtra(AlarmScheduler.EXTRA_PILL_ID);
+        String pillIds = intent.getStringExtra(AlarmScheduler.EXTRA_PILL_IDS);
+        if (pillIds == null || pillIds.isEmpty()) {
+            pillIds = intent.getStringExtra(AlarmScheduler.EXTRA_PILL_ID);
+        }
         boolean snoozed = intent.getBooleanExtra(AlarmScheduler.EXTRA_SNOOZED, false);
-        JSONObject pill = AlarmStore.findPill(context, pillId);
+        JSONArray pills = AlarmStore.findPills(context, pillIds);
 
         if (AlarmScheduler.ACTION_SNOOZE.equals(action)) {
             OverlayService.stop(context);
-            if (pill != null) AlarmScheduler.scheduleSnooze(context, pill, 5);
+            if (pills.length() > 0) AlarmScheduler.scheduleSnooze(context, pillIds, 5);
             return;
         }
 
-        if (AlarmScheduler.ACTION_TAKEN.equals(action)) {
+        if (AlarmScheduler.ACTION_TAKEN.equals(action)
+            || AlarmScheduler.ACTION_DISMISS.equals(action)) {
             OverlayService.stop(context);
             return;
         }
 
         if (AlarmScheduler.ACTION_FIRE.equals(action)) {
-            if (pill == null) return;
+            if (pills.length() == 0) return;
             wakeScreen(context);
-            if (pill.optBoolean("notifyDaily", false) && !snoozed) {
-                AlarmScheduler.scheduleNextDaily(context, pill);
+            if (!snoozed) {
+                for (int i = 0; i < pills.length(); i += 1) {
+                    JSONObject pill = pills.optJSONObject(i);
+                    if (pill != null && pill.optBoolean("notifyDaily", false)) {
+                        AlarmScheduler.scheduleNextDaily(context, pill);
+                    }
+                }
             }
-            OverlayService.start(context, pillId, snoozed);
+            OverlayService.start(context, pillIds, snoozed);
         }
     }
 

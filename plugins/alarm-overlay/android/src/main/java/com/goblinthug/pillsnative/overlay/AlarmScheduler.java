@@ -9,13 +9,19 @@ import android.os.Build;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 public final class AlarmScheduler {
     public static final String ACTION_FIRE = "com.goblinthug.pillsnative.ALARM_FIRE";
     public static final String ACTION_TAKEN = "com.goblinthug.pillsnative.ALARM_TAKEN";
     public static final String ACTION_SNOOZE = "com.goblinthug.pillsnative.ALARM_SNOOZE";
+    public static final String ACTION_DISMISS = "com.goblinthug.pillsnative.ALARM_DISMISS";
     public static final String EXTRA_PILL_ID = "pillId";
+    public static final String EXTRA_PILL_IDS = "pillIds";
     public static final String EXTRA_SNOOZED = "snoozed";
 
     private AlarmScheduler() {}
@@ -23,33 +29,54 @@ public final class AlarmScheduler {
     public static void scheduleAll(Context context) {
         cancelAll(context);
         JSONArray pills = AlarmStore.getPills(context);
-        JSONArray scheduled = new JSONArray();
+        Map<Long, List<String>> groups = new LinkedHashMap<>();
+
         for (int i = 0; i < pills.length(); i += 1) {
             JSONObject pill = pills.optJSONObject(i);
             if (pill == null) continue;
             long when = nextTriggerMillis(pill, false);
             if (when <= 0) continue;
-            int code = AlarmStore.requestCode(String.valueOf(pill.opt("id")), false);
-            setExact(context, when, String.valueOf(pill.opt("id")), false, code);
+            long bucket = (when / 60_000L) * 60_000L;
+            String id = String.valueOf(pill.opt("id"));
+            List<String> list = groups.get(bucket);
+            if (list == null) {
+                list = new ArrayList<>();
+                groups.put(bucket, list);
+            }
+            if (!list.contains(id)) list.add(id);
+        }
+
+        JSONArray scheduled = new JSONArray();
+        for (Map.Entry<Long, List<String>> entry : groups.entrySet()) {
+            String pillIds = joinIds(entry.getValue());
+            int code = AlarmStore.requestCode("group-" + entry.getKey(), false);
+            setExact(context, entry.getKey(), pillIds, false, code);
             scheduled.put(code);
         }
         AlarmStore.saveScheduledIds(context, scheduled);
     }
 
+    public static void scheduleSnooze(Context context, String pillIds, int minutes) {
+        if (pillIds == null || pillIds.isEmpty()) return;
+        int code = AlarmStore.requestCode("snooze-" + pillIds, true);
+        long when = System.currentTimeMillis() + Math.max(1, minutes) * 60_000L;
+        setExact(context, when, pillIds, true, code);
+    }
+
     public static void scheduleSnooze(Context context, JSONObject pill, int minutes) {
         if (pill == null) return;
-        String pillId = String.valueOf(pill.opt("id"));
-        int code = AlarmStore.requestCode(pillId, true);
-        long when = System.currentTimeMillis() + Math.max(1, minutes) * 60_000L;
-        setExact(context, when, pillId, true, code);
+        scheduleSnooze(context, String.valueOf(pill.opt("id")), minutes);
     }
 
     public static void scheduleNextDaily(Context context, JSONObject pill) {
         if (pill == null || !pill.optBoolean("notifyDaily", false)) return;
+        // Daily pills are regrouped on the next scheduleAll / boot.
+        // Schedule a temporary single-pill alarm until then.
         long when = nextTriggerMillis(pill, true);
         if (when <= 0) return;
-        int code = AlarmStore.requestCode(String.valueOf(pill.opt("id")), false);
-        setExact(context, when, String.valueOf(pill.opt("id")), false, code);
+        String id = String.valueOf(pill.opt("id"));
+        int code = AlarmStore.requestCode(id, false);
+        setExact(context, when, id, false, code);
     }
 
     public static void cancelAll(Context context) {
@@ -64,6 +91,7 @@ public final class AlarmScheduler {
             String id = String.valueOf(pill.opt("id"));
             cancel(context, AlarmStore.requestCode(id, false));
             cancel(context, AlarmStore.requestCode(id, true));
+            cancel(context, AlarmStore.requestCode("snooze-" + id, true));
         }
         AlarmStore.saveScheduledIds(context, new JSONArray());
     }
@@ -123,10 +151,10 @@ public final class AlarmScheduler {
         return calendar.getTimeInMillis();
     }
 
-    private static void setExact(Context context, long when, String pillId, boolean snoozed, int requestCode) {
+    private static void setExact(Context context, long when, String pillIds, boolean snoozed, int requestCode) {
         AlarmManager manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (manager == null) return;
-        PendingIntent pending = pending(context, ACTION_FIRE, pillId, snoozed, requestCode);
+        PendingIntent pending = pending(context, ACTION_FIRE, pillIds, snoozed, requestCode);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, pending);
@@ -138,16 +166,33 @@ public final class AlarmScheduler {
         }
     }
 
-    static PendingIntent pending(Context context, String action, String pillId, boolean snoozed, int requestCode) {
+    static PendingIntent pending(Context context, String action, String pillIds, boolean snoozed, int requestCode) {
         Intent intent = new Intent(context, AlarmReceiver.class);
         intent.setAction(action);
-        intent.putExtra(EXTRA_PILL_ID, pillId);
+        intent.putExtra(EXTRA_PILL_IDS, pillIds);
+        String first = firstId(pillIds);
+        intent.putExtra(EXTRA_PILL_ID, first);
         intent.putExtra(EXTRA_SNOOZED, snoozed);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         return PendingIntent.getBroadcast(context, requestCode, intent, flags);
+    }
+
+    static String firstId(String pillIds) {
+        if (pillIds == null || pillIds.isEmpty()) return "";
+        int comma = pillIds.indexOf(',');
+        return comma < 0 ? pillIds.trim() : pillIds.substring(0, comma).trim();
+    }
+
+    static String joinIds(List<String> ids) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.size(); i += 1) {
+            if (i > 0) sb.append(',');
+            sb.append(ids.get(i));
+        }
+        return sb.toString();
     }
 
     private static void cancel(Context context, int requestCode) {
