@@ -1,7 +1,7 @@
 {
   "name": "pillsnative",
   "productName": "Pills Native",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "main": "main.js",
   "scripts": {
     "dev": "electron-forge start",

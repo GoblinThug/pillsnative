@@ -31,10 +31,14 @@ function copyDir(from, to) {
 
 for (const entry of fs.readdirSync(srcRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    // Skip values/ — color is patched below to avoid duplicate resources.
+    // Skip values/ — color is patched in colors.xml below.
     if (entry.name === 'values') continue;
     copyDir(path.join(srcRoot, entry.name), path.join(resRoot, entry.name));
 }
+
+// Never keep a separate color resource file (duplicates colors.xml).
+const duplicateBg = path.join(resRoot, 'values', 'ic_launcher_background.xml');
+if (fs.existsSync(duplicateBg)) fs.unlinkSync(duplicateBg);
 
 // Remove default Capacitor webp launchers if present (PNG takes over same name).
 const densities = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
