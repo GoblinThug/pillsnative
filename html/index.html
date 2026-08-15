@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; media-src 'self' pills-sound:; style-src 'self' 'unsafe-inline'" />
-    <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'; media-src 'self' pills-sound:; style-src 'self' 'unsafe-inline'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; media-src 'self' pills-sound: blob: data: capacitor: http://localhost https://localhost; style-src 'self' 'unsafe-inline'" />
+    <meta http-equiv="X-Content-Security-Policy" content="default-src 'self'; script-src 'self'; media-src 'self' pills-sound: blob: data: capacitor: http://localhost https://localhost; style-src 'self' 'unsafe-inline'" />
     <link rel="stylesheet" href="../assets/css/fonts.css" />
     <link rel="stylesheet" href="../assets/css/app.css" />
     <title>PillsNative</title>
@@ -295,11 +295,11 @@
             <div class="settings-section__label">Обновления</div>
             <p class="settings-section__hint">Текущая версия: <span id="appVersion">—</span>. На Android обновление ставится из того же GitHub Releases, что и на ПК.</p>
             <div class="settings-update">
-                <div class="settings-update__status" id="updateStatus">Проверка обновлений доступна в установленной версии.</div>
+                <div class="settings-update__status" id="updateStatus">Нажмите «Проверить», чтобы узнать, есть ли новая версия.</div>
                 <div class="settings-update__actions">
-                    <button type="button" class="btn btn-secondary" id="updateCheck">Проверить обновления</button>
-                    <button type="button" class="btn btn-primary" id="updateDownload" hidden>Скачать</button>
-                    <button type="button" class="btn btn-primary" id="updateInstall" hidden>Установить и перезапустить</button>
+                    <button type="button" class="btn btn-secondary settings-update__btn" id="updateCheck">Проверить обновления</button>
+                    <button type="button" class="btn btn-primary settings-update__btn" id="updateDownload" hidden>Скачать обновление</button>
+                    <button type="button" class="btn btn-primary settings-update__btn" id="updateInstall" hidden>Установить APK</button>
                 </div>
             </div>
         </section>

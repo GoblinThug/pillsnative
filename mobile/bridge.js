@@ -149,32 +149,70 @@
         await persistExternalBackup();
     }
 
+    function isBuiltinSound(soundId) {
+        return SOUND_OPTIONS.some((item) => item.id === soundId);
+    }
+
+    function isCustomSoundId(soundId) {
+        return typeof soundId === 'string' && soundId.startsWith('custom-');
+    }
+
+    function normalizeCustomSounds(list) {
+        if (!Array.isArray(list)) return [];
+        return list
+            .filter((item) => item && isCustomSoundId(item.id) && item.file)
+            .map((item) => ({
+                id: String(item.id),
+                name: String(item.name || 'Свой звук'),
+                file: String(item.file),
+                path: item.path ? String(item.path) : '',
+            }));
+    }
+
+    function convertFileSrc(path) {
+        if (!path) return '';
+        try {
+            if (window.Capacitor?.convertFileSrc) {
+                return window.Capacitor.convertFileSrc(path);
+            }
+        } catch {
+            // ignore
+        }
+        return path.startsWith('file://') ? path : `file://${path}`;
+    }
+
     async function readSettings() {
         await ensureStorageReady();
         if (memorySettings) return memorySettings;
         try {
             const raw = await prefGet(SETTINGS_KEY);
             const parsed = raw ? JSON.parse(raw) : {};
+            const customSounds = normalizeCustomSounds(parsed.customSounds);
+            const soundId = isBuiltinSound(parsed.soundId) || customSounds.some((s) => s.id === parsed.soundId)
+                ? parsed.soundId
+                : 'soft-marimba';
             memorySettings = {
                 theme: parsed.theme === 'light' ? 'light' : 'dark',
-                soundId: SOUND_OPTIONS.some((s) => s.id === parsed.soundId)
-                    ? parsed.soundId
-                    : 'soft-marimba',
+                soundId,
                 alertMode: normalizeAlertMode(parsed.alertMode),
+                customSounds,
             };
         } catch {
-            memorySettings = { theme: 'dark', soundId: 'soft-marimba', alertMode: 'both' };
+            memorySettings = { theme: 'dark', soundId: 'soft-marimba', alertMode: 'both', customSounds: [] };
         }
         return memorySettings;
     }
 
     async function writeSettings(next) {
+        const customSounds = normalizeCustomSounds(next.customSounds);
+        const soundId = isBuiltinSound(next.soundId) || customSounds.some((s) => s.id === next.soundId)
+            ? next.soundId
+            : 'soft-marimba';
         memorySettings = {
             theme: next.theme === 'light' ? 'light' : 'dark',
-            soundId: SOUND_OPTIONS.some((s) => s.id === next.soundId)
-                ? next.soundId
-                : 'soft-marimba',
+            soundId,
             alertMode: normalizeAlertMode(next.alertMode),
+            customSounds,
         };
         await ensureStorageReady();
         await prefSet(SETTINGS_KEY, JSON.stringify(memorySettings));
@@ -226,6 +264,7 @@
                     theme: parsed.settings.theme,
                     soundId: parsed.settings.soundId,
                     alertMode: parsed.settings.alertMode,
+                    customSounds: parsed.settings.customSounds,
                 });
             }
         } catch (error) {
@@ -235,15 +274,24 @@
 
     async function publicSettings() {
         const settings = await readSettings();
+        const builtin = SOUND_OPTIONS.map((item) => ({
+            id: item.id,
+            name: item.name,
+            src: `./assets/sounds/${item.file}`,
+            custom: false,
+        }));
+        const custom = (settings.customSounds || []).map((item) => ({
+            id: item.id,
+            name: item.name,
+            src: convertFileSrc(item.path) || `./assets/sounds/soft-marimba.wav`,
+            custom: true,
+            file: item.file,
+            path: item.path,
+        }));
         return {
             ...settings,
             platform: 'android',
-            sounds: SOUND_OPTIONS.map((item) => ({
-                id: item.id,
-                name: item.name,
-                src: `./assets/sounds/${item.file}`,
-                custom: false,
-            })),
+            sounds: [...builtin, ...custom],
         };
     }
 
@@ -270,6 +318,7 @@
                     theme: settings.theme,
                     soundId: settings.soundId,
                     alertMode: settings.alertMode,
+                    customSounds: settings.customSounds || [],
                 },
             });
         } catch (error) {
@@ -510,6 +559,7 @@
                 theme: patch.theme ?? current.theme,
                 soundId: patch.soundId ?? current.soundId,
                 alertMode: patch.alertMode ?? current.alertMode,
+                customSounds: patch.customSounds ?? current.customSounds,
             });
             await nativeSchedule();
             const pub = await publicSettings();
@@ -518,11 +568,70 @@
         },
         getAlertStatus: async () => getAlertStatus(),
         requestAlertPermission: async (kind) => requestAlertPermission(kind),
-        addCustomSound: async () => ({
-            ...(await publicSettings()),
-            error: 'На Android загрузите звук через файловый менеджер в следующей версии',
-        }),
-        removeCustomSound: async () => publicSettings(),
+        addCustomSound: async () => {
+            const Overlay = getOverlay();
+            if (!Overlay?.pickCustomSound) {
+                return {
+                    ...(await publicSettings()),
+                    error: 'Выбор файла недоступен в этой сборке',
+                };
+            }
+            try {
+                const picked = await Overlay.pickCustomSound();
+                if (picked?.canceled) return publicSettings();
+                if (picked?.error) {
+                    return { ...(await publicSettings()), error: picked.error };
+                }
+                const current = await readSettings();
+                const entry = {
+                    id: picked.id,
+                    name: picked.name || 'Свой звук',
+                    file: picked.file,
+                    path: picked.path || '',
+                };
+                const customSounds = [
+                    ...(current.customSounds || []).filter((item) => item.id !== entry.id),
+                    entry,
+                ];
+                await writeSettings({
+                    ...current,
+                    soundId: entry.id,
+                    customSounds,
+                });
+                await nativeSchedule();
+                const pub = await publicSettings();
+                emit(listeners.settings, pub);
+                return pub;
+            } catch (error) {
+                return {
+                    ...(await publicSettings()),
+                    error: error?.message || 'Не удалось добавить звук',
+                };
+            }
+        },
+        removeCustomSound: async (soundId) => {
+            const current = await readSettings();
+            const target = (current.customSounds || []).find((item) => item.id === soundId);
+            if (!target) return publicSettings();
+            try {
+                await getOverlay()?.removeCustomSoundFile?.({
+                    id: target.id,
+                    file: target.file,
+                });
+            } catch {
+                // ignore file delete errors
+            }
+            const customSounds = (current.customSounds || []).filter((item) => item.id !== soundId);
+            await writeSettings({
+                ...current,
+                soundId: current.soundId === soundId ? 'soft-marimba' : current.soundId,
+                customSounds,
+            });
+            await nativeSchedule();
+            const pub = await publicSettings();
+            emit(listeners.settings, pub);
+            return pub;
+        },
         onSettingsChanged: (cb) => listeners.settings.push(cb),
         getAppVersion: async () => {
             const overlay = getOverlay();

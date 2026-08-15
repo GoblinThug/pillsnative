@@ -10,6 +10,8 @@ try {
         scheduleAll: async () => ({}),
         startBackground: async () => ({}),
         minimizeApp: async () => {},
+        pickCustomSound: async () => ({ canceled: true }),
+        removeCustomSoundFile: async () => {},
         getStatus: async () => ({
             platform: 'web',
             overlay: false,

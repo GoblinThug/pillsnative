@@ -1020,46 +1020,54 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
         const isAndroid = document.documentElement.classList.contains('is-mobile');
-        updateDownloadBtn.hidden = true;
-        updateInstallBtn.hidden = true;
-        updateCheckBtn.hidden = false;
-        updateCheckBtn.disabled = false;
+
+        const show = ({ check = false, download = false, install = false } = {}) => {
+            updateCheckBtn.hidden = !check;
+            updateDownloadBtn.hidden = !download;
+            updateInstallBtn.hidden = !install;
+            updateCheckBtn.disabled = false;
+        };
+
         updateInstallBtn.textContent = isAndroid ? 'Установить APK' : 'Установить и перезапустить';
+        updateDownloadBtn.textContent = 'Скачать обновление';
+        show({ check: true });
 
         switch (updateStatus.state) {
             case 'checking':
                 updateStatusEl.textContent = 'Проверяем обновления…';
+                show({ check: true });
                 updateCheckBtn.disabled = true;
                 break;
             case 'available':
                 updateStatusEl.textContent = updateStatus.manual
-                    ? `Доступна версия ${updateStatus.version}. На macOS скачайте её вручную с GitHub.`
-                    : `Доступна версия ${updateStatus.version}.`;
-                updateDownloadBtn.hidden = false;
-                updateDownloadBtn.textContent = updateStatus.manual ? 'Открыть Releases' : 'Скачать';
+                    ? `Найдена версия ${updateStatus.version}. На macOS скачайте её вручную с GitHub.`
+                    : `Найдена версия ${updateStatus.version}. Можно скачать.`;
+                updateDownloadBtn.textContent = updateStatus.manual ? 'Открыть Releases' : 'Скачать обновление';
+                show({ check: true, download: true });
                 break;
             case 'not-available':
-                updateStatusEl.textContent = `У вас актуальная версия (${updateStatus.version}).`;
+                updateStatusEl.textContent = `Обновлений нет — у вас актуальная версия (${updateStatus.version}).`;
+                show({ check: true });
                 break;
             case 'downloading':
-                updateStatusEl.textContent = `Скачивание… ${Math.round(updateStatus.percent || 0)}%`;
-                updateCheckBtn.hidden = true;
+                updateStatusEl.textContent = `Скачиваем обновление ${updateStatus.version || ''}… ${Math.round(updateStatus.percent || 0)}%`.replace(/\s+/g, ' ').trim();
+                show();
                 break;
             case 'ready':
                 updateStatusEl.textContent = isAndroid
-                    ? `Версия ${updateStatus.version} скачана. Разрешите установку APK, если система спросит.`
+                    ? `Версия ${updateStatus.version} скачана. Нажмите, чтобы установить APK.`
                     : `Версия ${updateStatus.version} скачана. Можно установить.`;
-                updateCheckBtn.hidden = true;
-                updateInstallBtn.hidden = false;
+                show({ install: true });
                 break;
             case 'installing':
-                updateStatusEl.textContent = 'Открыт установщик Android — подтвердите обновление.';
-                updateCheckBtn.hidden = true;
+                updateStatusEl.textContent = 'Открыт установщик — подтвердите обновление в системе.';
+                show();
                 break;
             case 'unsupported':
                 updateStatusEl.textContent = updateStatus.reason === 'portable'
                     ? 'Автообновление недоступно в portable-сборке. Скачайте новую версию с Releases.'
                     : 'Автообновление работает только в установленной сборке.';
+                show({ check: true });
                 break;
             case 'error': {
                 const messages = {
@@ -1068,20 +1076,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     notFound: 'Метаданные обновления не найдены в релизе.',
                     checksum: 'Файл обновления повреждён. Попробуйте позже.',
                     permission: isAndroid
-                        ? 'Разрешите установку из этого приложения (неизвестные источники), затем снова нажмите «Установить APK».'
+                        ? 'Разрешите установку из этого приложения, затем нажмите «Установить APK».'
                         : 'Нет прав для установки обновления.',
                     generic: 'Ошибка при проверке обновлений.',
                 };
                 updateStatusEl.textContent = messages[updateStatus.code] || updateStatus.message || messages.generic;
                 if (updateStatus.code === 'permission' && isAndroid) {
-                    updateInstallBtn.hidden = false;
+                    show({ check: true, install: true });
+                } else {
+                    show({ check: true });
                 }
                 break;
             }
             default:
-                updateStatusEl.textContent = isAndroid
-                    ? 'Можно проверить обновление с GitHub Releases и установить APK.'
-                    : 'Можно проверить наличие новой версии.';
+                updateStatusEl.textContent = 'Нажмите «Проверить», чтобы узнать, есть ли новая версия.';
+                show({ check: true });
                 break;
         }
     }

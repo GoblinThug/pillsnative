@@ -1,6 +1,7 @@
 package com.goblinthug.pillsnative.overlay;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.NotificationManager;
 import android.content.Intent;
 import android.net.Uri;
@@ -8,6 +9,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 
+import androidx.activity.result.ActivityResult;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationManagerCompat;
 
@@ -16,6 +18,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import org.json.JSONArray;
@@ -60,6 +63,76 @@ public class AlarmOverlayPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("Failed to minimize app", error);
         }
+    }
+
+    @PluginMethod
+    public void pickCustomSound(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("audio/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+            "audio/*",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/ogg",
+            "audio/aac",
+            "audio/flac",
+            "audio/webm"
+        });
+        startActivityForResult(call, intent, "onCustomSoundPicked");
+    }
+
+    @ActivityCallback
+    private void onCustomSoundPicked(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        try {
+            if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) {
+                JSObject canceled = new JSObject();
+                canceled.put("canceled", true);
+                call.resolve(canceled);
+                return;
+            }
+            Uri uri = result.getData().getData();
+            if (uri == null) {
+                JSObject canceled = new JSObject();
+                canceled.put("canceled", true);
+                call.resolve(canceled);
+                return;
+            }
+            try {
+                getContext().getContentResolver().takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+            } catch (Exception ignored) {
+                // Some providers do not support persistable permissions.
+            }
+            JSONObject imported = CustomSounds.importFromUri(getContext(), uri);
+            JSObject payload = new JSObject();
+            payload.put("canceled", false);
+            payload.put("id", imported.optString("id"));
+            payload.put("name", imported.optString("name"));
+            payload.put("file", imported.optString("file"));
+            payload.put("path", imported.optString("path"));
+            call.resolve(payload);
+        } catch (IllegalArgumentException error) {
+            JSObject payload = new JSObject();
+            payload.put("canceled", false);
+            payload.put("error", error.getMessage());
+            call.resolve(payload);
+        } catch (Exception error) {
+            call.reject("Не удалось импортировать звук", error);
+        }
+    }
+
+    @PluginMethod
+    public void removeCustomSoundFile(PluginCall call) {
+        String id = call.getString("id", "");
+        String file = call.getString("file", "");
+        CustomSounds.delete(getContext(), id, file);
+        call.resolve();
     }
 
     @PluginMethod

@@ -1061,6 +1061,12 @@ html.is-maximized .app {
   gap: 6px;
 }
 
+[hidden],
+.btn[hidden],
+.settings-update__btn[hidden] {
+  display: none !important;
+}
+
 .btn:hover {
   transform: translateY(-1px);
 }
@@ -1309,18 +1315,22 @@ html.is-maximized .app {
 
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: 22px;
-  transform: translateX(-50%);
+  left: 16px;
+  right: 16px;
+  bottom: max(22px, calc(env(safe-area-inset-bottom, 0px) + 16px));
   z-index: 220;
+  width: fit-content;
   max-width: calc(100% - 32px);
-  padding: 10px 14px;
-  border-radius: 999px;
+  margin-inline: auto;
+  padding: 12px 18px;
+  border-radius: 14px;
   border: 1px solid rgba(10, 132, 255, 0.35);
   background: var(--bg-drawer);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
   animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -1329,11 +1339,11 @@ html.is-maximized .app {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 10px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 
@@ -1635,20 +1645,32 @@ html[data-theme='light'] .settings-backdrop {
 }
 
 .settings-update__status {
+  min-height: 2.6em;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--text-secondary);
 }
 
 .settings-update__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 
-.settings-update__actions .btn {
-  flex: 1 1 auto;
-  min-width: 120px;
+.settings-update__actions .btn,
+.settings-update__btn {
+  width: 100%;
+  min-width: 0;
+  flex: none;
+}
+
+html.is-mobile .toast {
+  left: 20px;
+  right: 20px;
+  bottom: max(28px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+  max-width: calc(100% - 40px);
+  padding: 14px 20px;
+  font-size: 14px;
 }
 
 html.is-mobile .traffic-lights,

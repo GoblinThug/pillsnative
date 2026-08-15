@@ -40,6 +40,8 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
+
 public class OverlayService extends Service {
     public static final String CHANNEL_ALARM = "pills-alarms-lock";
     public static final String CHANNEL_NOTIFY = "pills-notify-normal";
@@ -473,12 +475,17 @@ public class OverlayService extends Service {
 
     private void playSound(String soundId) {
         stopSound();
-        String file = soundFile(soundId);
         try {
             mediaPlayer = new MediaPlayer();
-            AssetFileDescriptor afd = getAssets().openFd("public/assets/sounds/" + file);
-            mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
-            afd.close();
+            File custom = CustomSounds.resolvePlaybackFile(this, AlarmStore.getSettings(this));
+            if (custom != null && custom.exists()) {
+                mediaPlayer.setDataSource(custom.getAbsolutePath());
+            } else {
+                String file = soundFile(soundId);
+                AssetFileDescriptor afd = getAssets().openFd("public/assets/sounds/" + file);
+                mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+                afd.close();
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 mediaPlayer.setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
