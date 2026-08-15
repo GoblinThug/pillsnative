@@ -1,7 +1,7 @@
 {
   "name": "pillsnative",
   "productName": "Pills Native",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "main": "main.js",
   "scripts": {
     "dev": "electron-forge start",
@@ -15,7 +15,7 @@
     "dist:linux": "electron-builder --linux --publish never",
     "dist:publish": "electron-builder --publish always",
     "mobile:prepare": "node scripts/prepare-mobile.js",
-    "mobile:sync": "npm run mobile:prepare && npx cap sync android && node scripts/patch-android-manifest.js && node scripts/sync-android-version.js",
+    "mobile:sync": "npm run mobile:prepare && npx cap sync android && node scripts/patch-android-manifest.js && node scripts/sync-android-version.js && node scripts/sync-android-icons.js",
     "dist:android": "node scripts/build-android.js",
     "ci:version": "node scripts/ci-version.js"
   },
