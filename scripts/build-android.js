@@ -33,6 +33,7 @@ if (!fs.existsSync(path.join(androidDir, 'app'))) {
 
 npx(['cap', 'sync', 'android']);
 npx(['node', 'scripts/patch-android-manifest.js']);
+npx(['node', 'scripts/sync-android-version.js']);
 
 const gradlew = path.join(androidDir, isWin ? 'gradlew.bat' : 'gradlew');
 if (!isWin && fs.existsSync(gradlew)) {

@@ -25,6 +25,8 @@ const permissions = [
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
     'android.permission.USE_FULL_SCREEN_INTENT',
+    'android.permission.REQUEST_INSTALL_PACKAGES',
+    'android.permission.INTERNET',
 ];
 
 let changed = false;

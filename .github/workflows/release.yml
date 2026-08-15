@@ -199,6 +199,9 @@ jobs:
       - name: Patch Android notification permissions
         run: node scripts/patch-android-manifest.js
 
+      - name: Sync Android versionCode
+        run: node scripts/sync-android-version.js
+
       - name: Verify overlay plugin is linked
         run: |
           if ! grep -R "alarm-overlay" android --include='*.gradle'; then

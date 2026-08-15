@@ -45,7 +45,7 @@
 | 📥 | Трей на десктопе и фон на Android |
 | 📱 | Сборка для Android (Capacitor) с оверлеем поверх других окон |
 
-Текущая версия в репозитории: **`3.0.0`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
+Текущая версия в репозитории: **`3.0.2`** (актуальный номер всегда в [Releases](https://github.com/GoblinThug/pillsnative/releases)).
 
 ---
 
@@ -188,6 +188,12 @@ Portable обновляется только вручную с [Releases](https:
 **AppImage** проверяет обновления при запуске и из **Настроек** (нужен `latest-linux.yml` в релизе).  
 **.deb** — обновляйте вручную с [Releases](https://github.com/GoblinThug/pillsnative/releases).
 
+### Android
+
+Тот же источник, что и на ПК: **GitHub Releases**. В **Настройках** → «Проверить обновления» приложение скачает `PillsNative-android-….apk` и откроет установщик. Один раз разрешите установку из этого приложения (неизвестные источники).
+
+Либо скачайте APK вручную с [Releases](https://github.com/GoblinThug/pillsnative/releases) и установите поверх текущей версии.
+
 ---
 
 ## 🔐 Данные и приватность
@@ -265,7 +271,7 @@ Workflow [`.github/workflows/release.yml`](.github/workflows/release.yml) соб
 | 📥 | System tray background mode |
 | 📱 | Android build via Capacitor |
 
-Repo version: **`3.0.0`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
+Repo version: **`3.0.2`** (always check [Releases](https://github.com/GoblinThug/pillsnative/releases) for the latest).
 
 ---
 

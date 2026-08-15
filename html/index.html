@@ -261,6 +261,13 @@
                 </div>
                 <div class="permission-row">
                     <div>
+                        <div class="permission-row__title">Поверх экрана блокировки</div>
+                        <div class="permission-row__hint" id="fullscreenPermHint">Полноэкранное напоминание, когда телефон заблокирован</div>
+                    </div>
+                    <button type="button" class="btn btn-secondary permission-row__btn" id="fullscreenPermBtn">Разрешить</button>
+                </div>
+                <div class="permission-row">
+                    <div>
                         <div class="permission-row__title">Фон и точные будильники</div>
                         <div class="permission-row__hint" id="batteryPermHint">Чтобы напоминание не пропало после сворачивания</div>
                     </div>
@@ -276,7 +283,7 @@
         </section>
         <section class="settings-section">
             <div class="settings-section__label">Обновления</div>
-            <p class="settings-section__hint">Текущая версия: <span id="appVersion">—</span></p>
+            <p class="settings-section__hint">Текущая версия: <span id="appVersion">—</span>. На Android обновление ставится из того же GitHub Releases, что и на ПК.</p>
             <div class="settings-update">
                 <div class="settings-update__status" id="updateStatus">Проверка обновлений доступна в установленной версии.</div>
                 <div class="settings-update__actions">

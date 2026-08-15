@@ -762,6 +762,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const overlayPermBtn = document.getElementById('overlayPermBtn');
     const notifyPermHint = document.getElementById('notifyPermHint');
     const notifyPermBtn = document.getElementById('notifyPermBtn');
+    const fullscreenPermHint = document.getElementById('fullscreenPermHint');
+    const fullscreenPermBtn = document.getElementById('fullscreenPermBtn');
     const batteryPermHint = document.getElementById('batteryPermHint');
     const batteryPermBtn = document.getElementById('batteryPermBtn');
 
@@ -782,7 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function refreshAlertStatus() {
         if (!permissionList || typeof window.electronAPI?.getAlertStatus !== 'function') return;
-        let status = { platform: 'electron', overlay: true, notifications: true, exactAlarms: true, background: true };
+        let status = { platform: 'electron', overlay: true, notifications: true, exactAlarms: true, background: true, fullScreenIntent: true };
         try {
             status = await window.electronAPI.getAlertStatus() || status;
         } catch {
@@ -805,6 +807,13 @@ document.addEventListener('DOMContentLoaded', () => {
             status.notifications,
             'Разрешено — уведомления придут в шторку',
             'Разрешите уведомления, чтобы не пропустить приём',
+        );
+        setPermissionRow(
+            fullscreenPermBtn,
+            fullscreenPermHint,
+            status.fullScreenIntent !== false,
+            'Разрешено — напоминание откроется поверх блокировки',
+            'Разрешите полноэкранные уведомления для экрана блокировки',
         );
         setPermissionRow(
             batteryPermBtn,
@@ -907,6 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     overlayPermBtn?.addEventListener('click', () => requestAlertPermission('overlay'));
     notifyPermBtn?.addEventListener('click', () => requestAlertPermission('notifications'));
+    fullscreenPermBtn?.addEventListener('click', () => requestAlertPermission('fullscreen'));
     batteryPermBtn?.addEventListener('click', () => requestAlertPermission('background'));
 
     document.addEventListener('visibilitychange', () => {
@@ -938,10 +948,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderUpdateStatus(status) {
         updateStatus = status || { state: 'idle' };
+        if (updateStatus.url || updateStatus.version) {
+            window.__pillsUpdateLast = {
+                ...(window.__pillsUpdateLast || {}),
+                url: updateStatus.url || window.__pillsUpdateLast?.url,
+                version: updateStatus.version || window.__pillsUpdateLast?.version,
+            };
+        }
+        const isAndroid = document.documentElement.classList.contains('is-mobile');
         updateDownloadBtn.hidden = true;
         updateInstallBtn.hidden = true;
         updateCheckBtn.hidden = false;
         updateCheckBtn.disabled = false;
+        updateInstallBtn.textContent = isAndroid ? 'Установить APK' : 'Установить и перезапустить';
 
         switch (updateStatus.state) {
             case 'checking':
@@ -963,9 +982,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCheckBtn.hidden = true;
                 break;
             case 'ready':
-                updateStatusEl.textContent = `Версия ${updateStatus.version} скачана. Можно установить.`;
+                updateStatusEl.textContent = isAndroid
+                    ? `Версия ${updateStatus.version} скачана. Разрешите установку APK, если система спросит.`
+                    : `Версия ${updateStatus.version} скачана. Можно установить.`;
                 updateCheckBtn.hidden = true;
                 updateInstallBtn.hidden = false;
+                break;
+            case 'installing':
+                updateStatusEl.textContent = 'Открыт установщик Android — подтвердите обновление.';
+                updateCheckBtn.hidden = true;
                 break;
             case 'unsupported':
                 updateStatusEl.textContent = updateStatus.reason === 'portable'
@@ -978,14 +1003,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     network: 'Не удалось проверить обновления. Проверьте интернет.',
                     notFound: 'Метаданные обновления не найдены в релизе.',
                     checksum: 'Файл обновления повреждён. Попробуйте позже.',
-                    permission: 'Нет прав для установки обновления.',
+                    permission: isAndroid
+                        ? 'Разрешите установку из этого приложения (неизвестные источники), затем снова нажмите «Установить APK».'
+                        : 'Нет прав для установки обновления.',
                     generic: 'Ошибка при проверке обновлений.',
                 };
-                updateStatusEl.textContent = messages[updateStatus.code] || messages.generic;
+                updateStatusEl.textContent = messages[updateStatus.code] || updateStatus.message || messages.generic;
+                if (updateStatus.code === 'permission' && isAndroid) {
+                    updateInstallBtn.hidden = false;
+                }
                 break;
             }
             default:
-                updateStatusEl.textContent = 'Можно проверить наличие новой версии.';
+                updateStatusEl.textContent = isAndroid
+                    ? 'Можно проверить обновление с GitHub Releases и установить APK.'
+                    : 'Можно проверить наличие новой версии.';
                 break;
         }
     }
@@ -1001,11 +1033,14 @@ document.addEventListener('DOMContentLoaded', () => {
             await window.electronAPI.openReleases();
             return;
         }
-        await window.electronAPI.downloadUpdate();
+        renderUpdateStatus({ state: 'downloading', percent: 0, version: updateStatus.version, url: updateStatus.url });
+        const result = await window.electronAPI.downloadUpdate();
+        if (result) renderUpdateStatus(result);
     });
 
-    updateInstallBtn.addEventListener('click', () => {
-        window.electronAPI.installUpdate();
+    updateInstallBtn.addEventListener('click', async () => {
+        const result = await window.electronAPI.installUpdate();
+        if (result) renderUpdateStatus(result);
     });
 
     if (typeof window.electronAPI.onUpdateStatus === 'function') {

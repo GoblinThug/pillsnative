@@ -1,5 +1,6 @@
 package com.goblinthug.pillsnative.overlay;
 
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -18,6 +19,7 @@ import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -35,7 +37,7 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONObject;
 
 public class OverlayService extends Service {
-    public static final String CHANNEL_ALARM = "pills-alarms-heads";
+    public static final String CHANNEL_ALARM = "pills-alarms-lock";
     public static final String CHANNEL_ENGINE = "pills-overlay-engine";
     private static final int ENGINE_NOTIFICATION_ID = 1102;
 
@@ -79,15 +81,19 @@ public class OverlayService extends Service {
         boolean wantsOverlay = "overlay".equals(mode) || "both".equals(mode);
         boolean wantsNotification = "notification".equals(mode) || "both".equals(mode);
         boolean canOverlay = Settings.canDrawOverlays(this);
+        boolean lockedOrOff = isLockedOrScreenOff();
 
         if (wantsOverlay && !canOverlay) {
             wantsNotification = true;
         }
 
-        boolean showOverlayNow = wantsOverlay && canOverlay;
+        // Lock-screen overlay is unreliable on many OEMs — use full-screen activity instead.
+        boolean showOverlayNow = wantsOverlay && canOverlay && !lockedOrOff;
+        boolean useFullScreenIntent = lockedOrOff || !showOverlayNow;
         int alarmId = AlarmStore.requestCode(activePillId, snoozed);
-        if (wantsNotification) {
-            startForeground(alarmId, buildAlarmNotification(pill, snoozed, !showOverlayNow));
+
+        if (wantsNotification || lockedOrOff || useFullScreenIntent) {
+            startForeground(alarmId, buildAlarmNotification(pill, snoozed, useFullScreenIntent));
         } else {
             startForeground(ENGINE_NOTIFICATION_ID, engineNotification(
                 snoozed ? "Отложенное напоминание" : "Пора принять лекарство",
@@ -95,15 +101,50 @@ public class OverlayService extends Service {
             ));
         }
 
-        if (showOverlayNow) {
+        if (lockedOrOff) {
+            launchFullScreenActivity(activePillId, snoozed);
+        } else if (showOverlayNow) {
             showOverlay(pill, snoozed);
         }
 
-        if (showOverlayNow || !wantsNotification) {
+        if (showOverlayNow || lockedOrOff || !wantsNotification) {
             playSound(AlarmStore.getSettings(this).optString("soundId", "soft-marimba"));
         }
         vibrate();
         return START_STICKY;
+    }
+
+    private boolean isLockedOrScreenOff() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && !pm.isInteractive()) return true;
+        } catch (Exception ignored) {
+            // ignore
+        }
+        try {
+            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (km != null && km.isKeyguardLocked()) return true;
+        } catch (Exception ignored) {
+            // ignore
+        }
+        return false;
+    }
+
+    private void launchFullScreenActivity(String pillId, boolean snoozed) {
+        try {
+            Intent launch = new Intent(this, AlarmFullScreenActivity.class);
+            launch.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            );
+            launch.putExtra(AlarmScheduler.EXTRA_PILL_ID, pillId);
+            launch.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
+            startActivity(launch);
+        } catch (Exception ignored) {
+            // Full-screen intent notification remains as fallback.
+        }
     }
 
     @Override
@@ -260,17 +301,27 @@ public class OverlayService extends Service {
             .addAction(0, "Отложить 5 мин", actionPending(AlarmScheduler.ACTION_SNOOZE, pill, snoozed, id + 3))
             .addAction(0, "Выпил таблетку", actionPending(AlarmScheduler.ACTION_TAKEN, pill, snoozed, id + 4));
 
-        Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        if (launch != null) {
-            launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            launch.putExtra(AlarmScheduler.EXTRA_PILL_ID, String.valueOf(pill.opt("id")));
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
-            PendingIntent content = PendingIntent.getActivity(this, id + 5, launch, flags);
-            builder.setContentIntent(content);
-            if (fullScreen) {
-                builder.setFullScreenIntent(PendingIntent.getActivity(this, id + 6, launch, flags), true);
-            }
+        Intent contentLaunch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+
+        if (contentLaunch != null) {
+            contentLaunch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            contentLaunch.putExtra(AlarmScheduler.EXTRA_PILL_ID, String.valueOf(pill.opt("id")));
+            builder.setContentIntent(PendingIntent.getActivity(this, id + 5, contentLaunch, flags));
+        }
+
+        if (fullScreen) {
+            Intent full = new Intent(this, AlarmFullScreenActivity.class);
+            full.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            );
+            full.putExtra(AlarmScheduler.EXTRA_PILL_ID, String.valueOf(pill.opt("id")));
+            full.putExtra(AlarmScheduler.EXTRA_SNOOZED, snoozed);
+            builder.setFullScreenIntent(PendingIntent.getActivity(this, id + 6, full, flags), true);
         }
 
         return builder.build();
@@ -381,12 +432,13 @@ public class OverlayService extends Service {
                 "Напоминания о лекарствах",
                 NotificationManager.IMPORTANCE_HIGH
             );
-            alarm.setDescription("Всплывает сверху, даже когда приложение свёрнуто");
+            alarm.setDescription("Показывается на экране блокировки и поверх других приложений");
             alarm.enableVibration(true);
             alarm.setVibrationPattern(new long[] { 0, 400, 180, 400, 180, 520 });
             alarm.enableLights(true);
             alarm.setLightColor(Color.parseColor("#0A84FF"));
             alarm.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            alarm.setBypassDnd(true);
             alarm.setShowBadge(true);
             Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
             if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);

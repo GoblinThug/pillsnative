@@ -1,6 +1,7 @@
 package com.goblinthug.pillsnative.overlay;
 
 import android.Manifest;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
@@ -30,6 +31,7 @@ public class AlarmOverlayPlugin extends Plugin {
             AlarmStore.savePills(getContext(), pills == null ? new JSONArray() : new JSONArray(pills.toString()));
             AlarmStore.saveSettings(getContext(), settings == null ? new JSONObject() : new JSONObject(settings.toString()));
             requestNotificationsIfNeeded();
+            requestFullScreenIfNeeded();
             AlarmScheduler.scheduleAll(getContext());
             KeepAliveService.start(getContext());
             call.resolve(statusObject());
@@ -42,6 +44,7 @@ public class AlarmOverlayPlugin extends Plugin {
     public void startBackground(PluginCall call) {
         requestNotificationsIfNeeded();
         requestOverlayIfNeeded();
+        requestFullScreenIfNeeded();
         KeepAliveService.start(getContext());
         AlarmScheduler.scheduleAll(getContext());
         call.resolve(statusObject());
@@ -64,6 +67,20 @@ public class AlarmOverlayPlugin extends Plugin {
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:" + getContext().getPackageName())
             );
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        } catch (Exception ignored) {
+            // ignore
+        }
+    }
+
+    private void requestFullScreenIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return;
+        try {
+            NotificationManager nm = getContext().getSystemService(NotificationManager.class);
+            if (nm == null || nm.canUseFullScreenIntent()) return;
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(intent);
         } catch (Exception ignored) {
@@ -95,6 +112,34 @@ public class AlarmOverlayPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getAppVersion(PluginCall call) {
+        JSObject out = new JSObject();
+        out.put("version", AppUpdater.currentVersion(getContext()));
+        call.resolve(out);
+    }
+
+    @PluginMethod
+    public void checkForUpdates(PluginCall call) {
+        AppUpdater.check(this, call);
+    }
+
+    @PluginMethod
+    public void downloadUpdate(PluginCall call) {
+        AppUpdater.download(this, call);
+    }
+
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        AppUpdater.install(this, call);
+    }
+
+    @PluginMethod
+    public void openReleases(PluginCall call) {
+        AppUpdater.openReleases(getContext());
+        call.resolve();
+    }
+
+    @PluginMethod
     public void requestPermission(PluginCall call) {
         String kind = call.getString("kind", "overlay");
         try {
@@ -113,6 +158,15 @@ public class AlarmOverlayPlugin extends Plugin {
                 );
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 getContext().startActivity(intent);
+            } else if ("fullscreen".equals(kind)) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+                    intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getContext().startActivity(intent);
+                }
+            } else if ("install".equals(kind)) {
+                AppUpdater.requestInstallPermission(getActivity(), getContext());
             } else {
                 openBackgroundSettings();
             }
@@ -164,6 +218,8 @@ public class AlarmOverlayPlugin extends Plugin {
         status.put("overlay", Settings.canDrawOverlays(getContext()));
         status.put("notifications", NotificationManagerCompat.from(getContext()).areNotificationsEnabled());
         status.put("exactAlarms", AlarmScheduler.canScheduleExact(getContext()));
+        status.put("fullScreenIntent", canUseFullScreenIntent());
+        status.put("installPackages", AppUpdater.canInstallPackages(getContext()));
         boolean background = true;
         try {
             PowerManager pm = (PowerManager) getContext().getSystemService(android.content.Context.POWER_SERVICE);
@@ -175,5 +231,15 @@ public class AlarmOverlayPlugin extends Plugin {
         }
         status.put("background", background);
         return status;
+    }
+
+    private boolean canUseFullScreenIntent() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true;
+        try {
+            NotificationManager nm = getContext().getSystemService(NotificationManager.class);
+            return nm != null && nm.canUseFullScreenIntent();
+        } catch (Exception error) {
+            return false;
+        }
     }
 }

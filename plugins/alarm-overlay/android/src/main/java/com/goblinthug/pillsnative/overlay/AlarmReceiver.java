@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.PowerManager;
 
 import org.json.JSONObject;
 
@@ -37,10 +38,28 @@ public class AlarmReceiver extends BroadcastReceiver {
 
         if (AlarmScheduler.ACTION_FIRE.equals(action)) {
             if (pill == null) return;
+            wakeScreen(context);
             if (pill.optBoolean("notifyDaily", false) && !snoozed) {
                 AlarmScheduler.scheduleNextDaily(context, pill);
             }
             OverlayService.start(context, pillId, snoozed);
+        }
+    }
+
+    private static void wakeScreen(Context context) {
+        try {
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (pm == null) return;
+            @SuppressWarnings("deprecation")
+            PowerManager.WakeLock lock = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK
+                    | PowerManager.ACQUIRE_CAUSES_WAKEUP
+                    | PowerManager.ON_AFTER_RELEASE,
+                "pillsnative:alarm"
+            );
+            lock.acquire(15000L);
+        } catch (Exception ignored) {
+            // ignore
         }
     }
 

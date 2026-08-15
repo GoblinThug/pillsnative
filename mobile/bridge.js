@@ -422,14 +422,68 @@
         }),
         removeCustomSound: async () => publicSettings(),
         onSettingsChanged: (cb) => listeners.settings.push(cb),
-        getAppVersion: async () => 'mobile',
-        checkForUpdates: async () => ({ state: 'unsupported', reason: 'dev' }),
-        downloadUpdate: async () => false,
-        installUpdate: async () => {},
+        getAppVersion: async () => {
+            const overlay = getOverlay();
+            if (overlay?.getAppVersion) {
+                const info = await overlay.getAppVersion();
+                return info?.version || 'android';
+            }
+            const App = getApp();
+            if (App?.getInfo) {
+                const info = await App.getInfo();
+                return info?.version || 'android';
+            }
+            return 'android';
+        },
+        checkForUpdates: async () => {
+            const overlay = getOverlay();
+            if (!overlay?.checkForUpdates) {
+                return { state: 'unsupported', reason: 'mobile' };
+            }
+            const result = await overlay.checkForUpdates();
+            if (result?.url || result?.version) {
+                window.__pillsUpdateLast = {
+                    ...(window.__pillsUpdateLast || {}),
+                    ...result,
+                };
+            }
+            return result;
+        },
+        downloadUpdate: async () => {
+            const overlay = getOverlay();
+            if (!overlay?.downloadUpdate) return false;
+            const last = window.__pillsUpdateLast || {};
+            return overlay.downloadUpdate({
+                url: last.url,
+                version: last.version,
+            });
+        },
+        installUpdate: async () => {
+            const overlay = getOverlay();
+            if (!overlay?.installUpdate) return;
+            return overlay.installUpdate();
+        },
         openReleases: async () => {
+            const overlay = getOverlay();
+            if (overlay?.openReleases) {
+                await overlay.openReleases();
+                return;
+            }
             window.open('https://github.com/GoblinThug/pillsnative/releases/latest', '_blank');
         },
-        onUpdateStatus: () => {},
+        onUpdateStatus: (callback) => {
+            const overlay = getOverlay();
+            if (!overlay?.addListener) return;
+            void overlay.addListener('updateStatus', (status) => {
+                if (status?.url || status?.version) {
+                    window.__pillsUpdateLast = {
+                        ...(window.__pillsUpdateLast || {}),
+                        ...status,
+                    };
+                }
+                callback(status);
+            });
+        },
     };
 
     document.addEventListener('DOMContentLoaded', () => {

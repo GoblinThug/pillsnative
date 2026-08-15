@@ -15,8 +15,16 @@ try {
             notifications: false,
             exactAlarms: false,
             background: false,
+            fullScreenIntent: false,
+            installPackages: false,
         }),
         requestPermission: async () => ({}),
+        getAppVersion: async () => ({ version: 'web' }),
+        checkForUpdates: async () => ({ state: 'unsupported' }),
+        downloadUpdate: async () => ({ state: 'unsupported' }),
+        installUpdate: async () => ({ state: 'unsupported' }),
+        openReleases: async () => {},
+        addListener: async () => ({ remove: () => {} }),
     };
 }
 
